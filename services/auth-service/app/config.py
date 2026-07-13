@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql://creditflow:creditflow@localhost:5432/creditflow"
+    database_url: str = "postgresql://creditflow:creditflow@localhost:5433/creditflow"
     db_schema: str = "auth"
 
     redis_url: str = "redis://localhost:6379/1"  # DB index 1, per CONVENTIONS.md
