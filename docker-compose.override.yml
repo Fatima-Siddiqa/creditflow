@@ -1,0 +1,15 @@
+# Local-dev-only overrides: bind mounts for hot-reload, exposed ports for
+# direct debugging, etc. Auto-merged by `docker compose up` with no -f flags.
+#
+# Empty at Phase 0 — no app containers yet. Example of what a service
+# override will look like once added (Phase 2 onward):
+#
+# services:
+#   auth-service:
+#     volumes:
+#       - ./services/auth-service:/app
+#     ports:
+#       - "8001:8000"
+#     environment:
+#       - RELOAD=true
+services: {}
