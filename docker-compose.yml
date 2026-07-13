@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: creditflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-creditflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-creditflow}
+      POSTGRES_DB: ${POSTGRES_DB:-creditflow}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-creditflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [creditflow-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: creditflow-redis
+    restart: unless-stopped
+    # Logical DB index scheme (see docs/CONVENTIONS.md):
+    # 0 = gateway rate-limit / webhook-dedup
+    # 1 = auth jti store
+    # 2 = Celery broker/backend (scheduler-service)
+    # 3 = SSE pub/sub (ai-generation-service <-> gateway)
+    # 4 = usage counters (usage-service)
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [creditflow-net]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: creditflow-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+    ports:
+      - "15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [creditflow-net]
+
+  mongodb:
+    image: mongo:7
+    container_name: creditflow-mongodb
+    restart: unless-stopped
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [creditflow-net]
+
+  # App services get added here one at a time, phase by phase, each using:
+  #   depends_on:
+  #     postgres: { condition: service_healthy }
+  #     rabbitmq: { condition: service_healthy }
+
+networks:
+  creditflow-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  mongodata:
