@@ -12,4 +12,7 @@
 #       - "8001:8000"
 #     environment:
 #       - RELOAD=true
-services: {}
+services:
+  postgres:
+    ports:
+      - "5433:5432"
