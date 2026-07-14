@@ -3,15 +3,38 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
+from app.dependencies import check_login_rate_limit, register_failed_login, clear_login_attempts, get_current_user
 from app.events import publish_event
-from app.models import User, Credential, EmailVerificationToken
-from app.schemas import SignupRequest, SignupResponse, VerifyEmailRequest, MessageResponse
-from app.security import hash_password, generate_raw_token, hash_token
+from app.models import User, Credential, EmailVerificationToken, RefreshToken
+from app.redis_client import redis_client
+from app.schemas import (
+    SignupRequest, SignupResponse, VerifyEmailRequest, MessageResponse,
+    LoginRequest, TokenPairResponse, RefreshRequest, LogoutRequest,
+)
+from app.security import hash_password, verify_password, generate_raw_token, hash_token, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 EMAIL_VERIFICATION_TTL_HOURS = 24
+REFRESH_TOKEN_TTL_DAYS = 7  # matches settings.refresh_token_ttl_days, kept explicit here for the raw SQL-adjacent logic below
+
+def _issue_token_pair(db: Session, user: User, rotated_from_id=None) -> TokenPairResponse:
+    access_token, jti = create_access_token(user_id=user.id, account_id=None, role=None)
+    redis_client.setex(f"jti:{jti}", settings.access_token_ttl_minutes * 60, "1")
+
+    raw_refresh = generate_raw_token()
+    refresh_row = RefreshToken(
+        user_id=user.id,
+        token_hash=hash_token(raw_refresh),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_ttl_days),
+        rotated_from=rotated_from_id,
+    )
+    db.add(refresh_row)
+    db.commit()
+
+    return TokenPairResponse(access_token=access_token, refresh_token=raw_refresh)
 
 
 def _error(code: str, message: str, status_code: int) -> HTTPException:
@@ -78,3 +101,59 @@ def verify_email(body: VerifyEmailRequest, db: Session = Depends(get_db)):
     db.commit()
 
     return MessageResponse(message="Email verified successfully.")
+
+@router.post("/login", response_model=TokenPairResponse)
+async def login(body: LoginRequest, db: Session = Depends(get_db)):
+    check_login_rate_limit(body.email)
+
+    user = db.query(User).filter(User.email == body.email).first()
+    credential = db.query(Credential).filter(Credential.user_id == user.id).first() if user else None
+
+    if not user or not credential or not verify_password(body.password, credential.password_hash):
+        if user:
+            register_failed_login(body.email)
+        raise _error("invalid_credentials", "Email or password is incorrect.", status.HTTP_401_UNAUTHORIZED)
+
+    if not user.is_verified:
+        raise _error("email_not_verified", "Please verify your email before logging in.", status.HTTP_403_FORBIDDEN)
+
+    clear_login_attempts(body.email)
+    tokens = _issue_token_pair(db, user)
+
+    await publish_event("user.logged_in", payload={"user_id": str(user.id)})
+
+    return tokens
+
+
+@router.post("/refresh", response_model=TokenPairResponse)
+def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
+    token_hash = hash_token(body.refresh_token)
+    record = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+
+    if not record:
+        raise _error("invalid_refresh_token", "Refresh token is invalid.", status.HTTP_401_UNAUTHORIZED)
+    if record.revoked:
+        # Reuse of an already-rotated (or logged-out) token — treat as a
+        # possible token theft, not just an expired-token situation.
+        raise _error("refresh_token_reused", "This refresh token has already been used.", status.HTTP_401_UNAUTHORIZED)
+    if record.expires_at < datetime.now(timezone.utc):
+        raise _error("refresh_token_expired", "Refresh token has expired.", status.HTTP_401_UNAUTHORIZED)
+
+    record.revoked = True
+    user = db.query(User).filter(User.id == record.user_id).first()
+    tokens = _issue_token_pair(db, user, rotated_from_id=record.id)
+
+    return tokens
+
+
+@router.post("/logout", response_model=MessageResponse)
+def logout(body: LogoutRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    token_hash = hash_token(body.refresh_token)
+    record = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+    if record:
+        record.revoked = True
+        db.commit()
+
+    redis_client.delete(f"jti:{current_user['jti']}")
+
+    return MessageResponse(message="Logged out successfully.")
