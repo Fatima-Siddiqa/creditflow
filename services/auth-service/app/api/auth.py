@@ -1,3 +1,7 @@
+import secrets
+
+from app.models import PasswordResetToken
+from app.schemas import ForgotPasswordRequest, ResetPasswordRequest
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,6 +23,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 EMAIL_VERIFICATION_TTL_HOURS = 24
 REFRESH_TOKEN_TTL_DAYS = 7  # matches settings.refresh_token_ttl_days, kept explicit here for the raw SQL-adjacent logic below
+PASSWORD_RESET_TTL_MINUTES = 15
+
+def _generate_otp() -> str:
+    return "".join(secrets.choice("0123456789") for _ in range(6))
 
 def _issue_token_pair(db: Session, user: User, rotated_from_id=None) -> TokenPairResponse:
     access_token, jti = create_access_token(user_id=user.id, account_id=None, role=None)
@@ -157,3 +165,56 @@ def logout(body: LogoutRequest, db: Session = Depends(get_db), current_user: dic
     redis_client.delete(f"jti:{current_user['jti']}")
 
     return MessageResponse(message="Logged out successfully.")
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == body.email).first()
+
+    # Deliberately return the same success message whether or not the email
+    # exists — otherwise this endpoint becomes a way to check which emails
+    # are registered (a real, if minor, information leak).
+    if not user:
+        return MessageResponse(message="If that email is registered, a reset code has been sent.")
+
+    otp = _generate_otp()
+    reset_token = PasswordResetToken(
+        user_id=user.id,
+        token_hash=hash_token(otp),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=PASSWORD_RESET_TTL_MINUTES),
+    )
+    db.add(reset_token)
+    db.commit()
+
+    # Same caveat as signup: notification-service (Phase 13) doesn't exist
+    # yet, so this otp only reaches you via the event payload / DB for now.
+    await publish_event(
+        "user.password_reset_requested",
+        payload={"user_id": str(user.id), "email": user.email, "otp": otp},
+    )
+
+    return MessageResponse(message="If that email is registered, a reset code has been sent.")
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
+    token_hash = hash_token(body.token)
+    record = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token_hash == token_hash
+    ).first()
+
+    if not record:
+        raise _error("invalid_token", "Reset code is invalid.", status.HTTP_400_BAD_REQUEST)
+    if record.used:
+        raise _error("token_already_used", "Reset code has already been used.", status.HTTP_400_BAD_REQUEST)
+    if record.expires_at < datetime.now(timezone.utc):
+        raise _error("token_expired", "Reset code has expired.", status.HTTP_400_BAD_REQUEST)
+
+    credential = db.query(Credential).filter(Credential.user_id == record.user_id).first()
+    credential.password_hash = hash_password(body.new_password)
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == record.user_id, RefreshToken.revoked == False
+    ).update({"revoked": True})
+    record.used = True
+    db.commit()
+
+    return MessageResponse(message="Password reset successfully.")
