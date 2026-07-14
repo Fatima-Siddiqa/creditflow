@@ -66,6 +66,7 @@ async def signup(body: SignupRequest, db: Session = Depends(get_db)):
     db.add(credential)
 
     raw_token = generate_raw_token()
+    print(f"[DEV] Email verification token for {body.email}: {raw_token}")  # TODO: remove once notification-service sends this via email (Phase 13)
     verification = EmailVerificationToken(
         user_id=user.id,
         token_hash=hash_token(raw_token),
