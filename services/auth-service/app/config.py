@@ -7,9 +7,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://creditflow:creditflow@localhost:5433/creditflow"
     db_schema: str = "auth"
 
-    redis_url: str = "redis://localhost:6379/1"  # DB index 1, per CONVENTIONS.md
+    redis_url: str = "redis://localhost:6380/1"
 
-    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_url: str = "amqp://guest:guest@localhost:5673/"
 
     jwt_private_key_path: str = "../../keys/jwt_private.pem"
     jwt_public_key_path: str = "../../keys/jwt_public.pem"
