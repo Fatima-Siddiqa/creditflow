@@ -22,3 +22,6 @@ services:
   redis:
     ports:
       - "6380:6379"
+  auth-service:
+    ports:
+      - "8001:8000"
