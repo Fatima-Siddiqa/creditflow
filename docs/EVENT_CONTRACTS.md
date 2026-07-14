@@ -43,3 +43,12 @@ audit log.
 
 ## Outbox pattern and idempotent consumers
 _(added next)_
+
+## Note on early-phase publishing
+An exchange can exist and receive published messages before any
+consumer's phase has been built — this is expected, not a bug. A message
+published to an exchange with no bound queue isn't retained anywhere
+(RabbitMQ has nowhere to put it). Don't mistake "no queue yet" for
+"publish failed" — check the exchange's publish count in the management
+UI (Exchanges tab), not queue depth, to confirm a service is publishing
+correctly ahead of its consumers existing.

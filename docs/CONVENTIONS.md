@@ -36,13 +36,43 @@ Every service exposes:
 - Event names are `noun.past_tense_verb` (`invoice.paid`, `content.scheduled`)
   — full registry lives in `docs/EVENT_CONTRACTS.md`.
 
-## Service independence
-- Every service's `main.py` runs standalone: `uvicorn app.main:app`.
-- Every service's pytest suite passes with **no other service running**.
-  Mock RabbitMQ publishes/consumes and DB calls in unit tests. Tests that
-  need real Postgres/RabbitMQ/Redis are integration tests, run separately
-  against docker-compose — not part of the fast unit suite CI runs on
-  every push.
+## Service independence (testing)
+Every service's pytest suite runs against **real Postgres and Redis**
+(each test wrapped in a transaction that's rolled back afterward, so
+nothing persists), with **RabbitMQ mocked** (an in-memory list standing in
+for `publish_event`, via `monkeypatch`). This is not a pure
+everything-mocked unit-test setup — that would require a repository/
+interface layer between endpoints and the DB, which this project doesn't
+use, and retrofitting one costs more than any single phase can absorb.
+What actually matters: no other *service* (of the 13) needs to be running
+for a given service's tests to pass — only the shared Postgres/Redis
+containers from `docker-compose.yml`.
+
+## Local (non-Docker) dev tooling needs published host ports
+Every infra service in `docker-compose.yml` is reachable from **other
+containers** via its internal hostname/port — but Alembic, pytest, and
+`uvicorn --reload` run directly on the host, not in a container, so they
+need a **host-published port** instead. `docker-compose.override.yml` maps
+each infra service to a distinct host port, chosen to avoid colliding with
+anything that might already be running locally on the standard port:
+
+| Service | Internal (container-to-container) | Host-published (local tooling) |
+|---|---|---|
+| postgres | `postgres:5432` | `localhost:5433` |
+| redis | `redis:6379` | `localhost:6380` |
+| rabbitmq | `rabbitmq:5672` | `localhost:5673` |
+
+Every service's `app/config.py` default should use the host-published
+values (what you run locally most of the time); the *container* version of
+each URL only applies inside that service's own `docker-compose.yml`
+entry, via its `environment:` block.
+
+## Dockerfile pattern
+No `--reload` in the container `CMD` — that's a local-dev convenience
+only. Every service listens on port 8000 *inside* its own container
+regardless of what host port it's mapped to locally; `docker-compose.yml`
+(or the gateway, once built) decides host-facing ports, not the service
+itself.
 
 ## Git / commits
 - Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`).
@@ -59,6 +89,7 @@ Single Redis instance, separated by logical DB index:
 | 2 | scheduler-service | Celery broker + result backend |
 | 3 | ai-generation-service / api-gateway | SSE token pub/sub fan-out |
 | 4 | usage-service | live per-account usage counters |
+| 15 | all services (test suites) | shared, flushed per-test — safe to share since only one service's tests run at a time in this solo workflow |
 
 ## PostgreSQL
 Single instance, **one schema per service** — not one database per service.
