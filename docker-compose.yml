@@ -92,7 +92,7 @@ services:
       timeout: 5s
       retries: 5
     networks: [creditflow-net]
-api-gateway:
+  api-gateway:
     build: ./services/api-gateway
     container_name: creditflow-api-gateway
     restart: unless-stopped
