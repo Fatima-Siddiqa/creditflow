@@ -1,0 +1,54 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # Gateway owns Redis logical DB index 0 (rate-limit counters, webhook
+    # dedup keys, SSE channel subscriptions) — see docs/CONVENTIONS.md.
+    redis_url: str = "redis://localhost:6380/0"
+
+    # Publisher-only: relays verified/deduped webhook events onto the
+    # relevant domain exchanges. No queues bound here, no consuming.
+    rabbitmq_url: str = "amqp://guest:guest@localhost:5673/"
+
+    # Gateway never holds the private key — verification only.
+    jwt_public_key_path: str = "../../keys/jwt_public.pem"
+    jwt_algorithm: str = "RS256"
+
+    # ---- Downstream service base URLs (static route map, PR #2) ----
+    # Local/pytest defaults point at host-published ports; docker-compose's
+    # environment: block overrides each to its container hostname:8000.
+    # Port numbers follow spec §2's service table order (Auth=#2 -> 8001,
+    # User/Tenant=#3 -> 8002, ... Admin=#13 -> 8012). Services not yet
+    # built still get a real default here — requests to them 502 with
+    # "service unreachable" until that phase lands, which is expected.
+    auth_service_url: str = "http://localhost:8001"
+    user_service_url: str = "http://localhost:8002"
+    billing_service_url: str = "http://localhost:8003"
+    credits_service_url: str = "http://localhost:8004"
+    usage_service_url: str = "http://localhost:8005"
+    ai_generation_service_url: str = "http://localhost:8006"
+    content_service_url: str = "http://localhost:8007"
+    scheduler_service_url: str = "http://localhost:8008"
+    social_publishing_service_url: str = "http://localhost:8009"
+    scraper_service_url: str = "http://localhost:8010"
+    notification_service_url: str = "http://localhost:8011"
+    admin_service_url: str = "http://localhost:8012"
+
+    # ---- Rate limiting (PR #4) ----
+    rate_limit_window_seconds: int = 60
+    rate_limit_max_requests_per_account: int = 100
+    rate_limit_max_requests_per_ip: int = 200
+
+    # ---- Webhooks (PR #5) ----
+    webhook_dedup_ttl_seconds: int = 86400  # 24h, per spec §8 Service 1
+    stripe_webhook_secret: str = ""
+    linkedin_webhook_secret: str = ""
+    # No openrouter_webhook_secret: OpenRouter's completions API is a
+    # synchronous/streaming call, not a webhook — there's nothing to
+    # verify inbound here. Kept out rather than stubbed to avoid modeling
+    # an integration that doesn't exist. Revisit only if that changes.
+
+
+settings = Settings()
