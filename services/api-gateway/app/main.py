@@ -1,11 +1,13 @@
 from fastapi import FastAPI, HTTPException, status
 
+from app.api.proxy import router as proxy_router
 from app.redis_client import redis_client
 
 app = FastAPI(title="CreditFlow API Gateway")
 
-# Routers land here phase-by-phase within Phase 3:
-#   app.include_router(proxy_router)     # PR #2 — route map / reverse proxy
+app.include_router(proxy_router)
+
+# Routers still to land within Phase 3:
 #   app.include_router(webhooks_router)  # PR #5 — webhook intake
 #   app.include_router(sse_router)       # PR #6 — SSE re-stream
 
