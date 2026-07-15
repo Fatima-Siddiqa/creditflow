@@ -12,4 +12,16 @@
 #       - "8001:8000"
 #     environment:
 #       - RELOAD=true
-services: {}
+services:
+  postgres:
+    ports:
+      - "5433:5432"
+  rabbitmq:
+    ports:
+      - "5673:5672"
+  redis:
+    ports:
+      - "6380:6379"
+  auth-service:
+    ports:
+      - "8001:8000"
