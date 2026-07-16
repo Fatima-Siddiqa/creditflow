@@ -1,4 +1,5 @@
 import httpx
+from app.rate_limiter import enforce_account_rate_limit, enforce_ip_rate_limit
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.dependencies import verify_access_token
@@ -43,9 +44,13 @@ async def proxy(path: str, request: Request):
     # matching auth-service's router prefix.
     target_url = f"{base_url}/{path}"
 
-    if not is_public_route(request.method, path):
-        verify_access_token(request.headers.get("authorization"))
+    client_ip = request.client.host if request.client else "unknown"
+    enforce_ip_rate_limit(client_ip)
 
+    if not is_public_route(request.method, path):
+        payload = verify_access_token(request.headers.get("authorization"))
+        enforce_account_rate_limit(payload["account_id"])
+        
     body = await request.body()
     forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS}
 
