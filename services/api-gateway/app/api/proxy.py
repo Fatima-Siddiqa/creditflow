@@ -1,6 +1,8 @@
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
+from app.dependencies import verify_access_token
+from app.public_routes import is_public_route
 from app.routing import resolve_service_base_url
 
 router = APIRouter()
@@ -40,6 +42,9 @@ async def proxy(path: str, request: Request):
     # downstream service's own route, e.g. "auth/login" -> "/auth/login",
     # matching auth-service's router prefix.
     target_url = f"{base_url}/{path}"
+
+    if not is_public_route(request.method, path):
+        verify_access_token(request.headers.get("authorization"))
 
     body = await request.body()
     forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS}

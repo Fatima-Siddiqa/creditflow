@@ -98,6 +98,7 @@ services:
     restart: unless-stopped
     environment:
       REDIS_URL: redis://redis:6379/0
+      AUTH_JTI_REDIS_URL: redis://redis:6379/1
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
       AUTH_SERVICE_URL: http://auth-service:8000

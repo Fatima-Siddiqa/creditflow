@@ -3,7 +3,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
+    # Read-only: auth-service's active-jti store (index 1, NOT the
+    # gateway's own index 0). JWT verification (PR #4) needs to check
+    # whether a token's jti is still active, and per CONVENTIONS.md this
+    # store is meant to be read directly by other services (the Admin
+    # Service does the same for its sessions view) rather than requiring
+    # an HTTP round-trip to auth-service on every single proxied request.
+    auth_jti_redis_url: str = "redis://localhost:6380/1"
+    
     # Gateway owns Redis logical DB index 0 (rate-limit counters, webhook
     # dedup keys, SSE channel subscriptions) — see docs/CONVENTIONS.md.
     redis_url: str = "redis://localhost:6380/0"
