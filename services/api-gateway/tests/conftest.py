@@ -28,6 +28,7 @@ def test_redis_client():
 @pytest.fixture(autouse=True)
 def _patch_redis(monkeypatch, test_redis_client):
     monkeypatch.setattr("app.main.redis_client", test_redis_client)
+    monkeypatch.setattr("app.rate_limiter.redis_client", test_redis_client)
     # Same test-Redis db stands in for auth-service's jti store too — the
     # gateway only ever calls .exists() on it, and these tests just need
     # something real to check jti presence/absence against.
