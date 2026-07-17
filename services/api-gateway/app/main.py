@@ -1,13 +1,19 @@
 from fastapi import FastAPI, HTTPException, status
 
 from app.api.proxy import router as proxy_router
+from app.api.sse import router as sse_router
 from app.api.webhooks import router as webhooks_router
 from app.redis_client import redis_client
 
 app = FastAPI(title="CreditFlow API Gateway")
 
+# Order matters: sse_router's /api/ai/stream/{job_id} must be registered
+# BEFORE proxy_router's /api/{path:path} catch-all, or the wildcard would
+# match first and this route would never be reached.
+app.include_router(sse_router)
 app.include_router(proxy_router)
 app.include_router(webhooks_router)
+
 
 # Routers still to land within Phase 3:
 #   app.include_router(webhooks_router)  # PR #5 — webhook intake
