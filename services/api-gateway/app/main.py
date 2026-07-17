@@ -1,11 +1,13 @@
 from fastapi import FastAPI, HTTPException, status
 
 from app.api.proxy import router as proxy_router
+from app.api.webhooks import router as webhooks_router
 from app.redis_client import redis_client
 
 app = FastAPI(title="CreditFlow API Gateway")
 
 app.include_router(proxy_router)
+app.include_router(webhooks_router)
 
 # Routers still to land within Phase 3:
 #   app.include_router(webhooks_router)  # PR #5 — webhook intake
