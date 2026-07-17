@@ -1,0 +1,109 @@
+name: auth-service CI
+
+on:
+  pull_request:
+    paths: ["services/auth-service/**"]
+  push:
+    branches: [dev, main]
+    paths: ["services/auth-service/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: creditflow
+          POSTGRES_PASSWORD: creditflow
+          POSTGRES_DB: creditflow
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U creditflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r services/auth-service/requirements.txt
+
+      # keys/jwt_private.pem is gitignored — a fresh checkout doesn't have
+      # it. auth-service's tests actually sign tokens (unlike the gateway,
+      # which only verifies), so CI needs its own throwaway keypair. This
+      # overwrites the committed public key in the *runner's* checkout only
+      # — nothing gets pushed back, so the real repo key is untouched.
+      # Written to repo-root keys/, matching the "../../keys/..." default
+      # paths in app/config.py, which are resolved relative to the pytest
+      # working directory below (services/auth-service).
+      - name: Generate throwaway JWT keypair for CI
+        run: |
+          openssl genrsa -out keys/jwt_private.pem 2048
+          openssl rsa -in keys/jwt_private.pem -pubout -out keys/jwt_public.pem
+
+      # Alembic's migration does `schema='auth'` per table but never
+      # CREATE SCHEMA — your local Postgres has the schema because it was
+      # created manually at some point, invisible to any committed file.
+      # A fresh CI Postgres needs this explicitly, and so will every future
+      # service + the eventual AWS deploy.
+      - name: Create auth schema
+        run: |
+          python -c "
+          import psycopg2
+          conn = psycopg2.connect(
+              host='localhost', port=5433,
+              user='creditflow', password='creditflow', dbname='creditflow',
+          )
+          conn.autocommit = True
+          cur = conn.cursor()
+          cur.execute('CREATE SCHEMA IF NOT EXISTS auth')
+          cur.close()
+          conn.close()
+          "
+
+      - name: Run migrations
+        working-directory: services/auth-service
+        run: alembic upgrade head
+
+      # working-directory matters here: app/config.py's default key paths
+      # ("../../keys/jwt_private.pem") are relative to services/auth-service,
+      # matching how you run pytest locally — running from repo root instead
+      # would resolve those paths outside the repo entirely.
+      - name: Run tests
+        working-directory: services/auth-service
+        run: pytest tests -v
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Compute lowercase image owner
+        id: prep
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: services/auth-service
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/${{ steps.prep.outputs.owner }}/auth-service:${{ github.sha }}
