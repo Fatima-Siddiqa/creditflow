@@ -113,6 +113,9 @@ services:
       SCRAPER_SERVICE_URL: http://scraper-service:8000
       NOTIFICATION_SERVICE_URL: http://notification-service:8000
       ADMIN_SERVICE_URL: http://admin-service:8000
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      LINKEDIN_WEBHOOK_SECRET: ${LINKEDIN_WEBHOOK_SECRET}
+      OPENROUTER_WEBHOOK_SECRET: ${OPENROUTER_WEBHOOK_SECRET}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:

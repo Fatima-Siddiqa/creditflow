@@ -41,6 +41,35 @@ keys it needs (multiple bindings per queue, not one queue per event type).
 `admin-service` is the exception — it binds `#` on every exchange for the
 audit log.
 
+## Webhook relay events (api-gateway)
+In addition to the producers listed above, `api-gateway` also publishes
+onto `billing_events`, `social_events`, and `ai_events` — as a relay for
+verified, deduped inbound webhooks (Stripe, LinkedIn, OpenRouter
+respectively). Per spec §8 Service 1's own event contract: *"Publishes:
+billing.\*, social.\*, ai.\* (relayed from webhooks)."* The gateway does
+NOT interpret the webhook's business meaning — it verifies the signature,
+dedups by event ID, and republishes the raw payload for the owning
+service to process. This is also how spec §8 Service 4 (Billing)'s
+*"Persist every Stripe webhook event received (via Gateway)..."*
+requirement is satisfied: billing-service receives Stripe's payload via
+this relayed event, not a direct synchronous call from the gateway.
+
+| Exchange | Event type | Payload |
+|---|---|---|
+| `billing_events` | `billing.webhook_received` | `{"source": "stripe", "raw_event": {...}}` |
+| `social_events` | `social.webhook_received` | `{"source": "linkedin", "raw_event": {...}}` |
+| `ai_events` | `ai.webhook_received` | `{"source": "openrouter", "raw_event": {...}}` |
+
+**Note on LinkedIn/OpenRouter:** as of Phase 3, neither product has a
+confirmed real inbound-webhook mechanism for what this project actually
+integrates with (LinkedIn's Sign-In/Share products are outbound-only from
+our side; OpenRouter's completions API is synchronous, not webhook-based).
+These two endpoints exist to satisfy spec §8 Service 1's literal
+requirement (no hedge in the PDF) and use a generic HMAC-signature
+scaffold pending confirmation from the mentor on whether/how a real
+signed payload would ever arrive here. Revisit when Phase 11 (Social
+Publishing) is built and LinkedIn's actual integration surface is known.
+
 ## Outbox pattern and idempotent consumers
 _(added next)_
 

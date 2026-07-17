@@ -48,14 +48,18 @@ class Settings(BaseSettings):
     rate_limit_max_requests_per_account: int = 100
     rate_limit_max_requests_per_ip: int = 200
 
-    # ---- Webhooks (PR #5) ----
+    # ---- Webhooks (this phase) ----
     webhook_dedup_ttl_seconds: int = 86400  # 24h, per spec §8 Service 1
     stripe_webhook_secret: str = ""
     linkedin_webhook_secret: str = ""
-    # No openrouter_webhook_secret: OpenRouter's completions API is a
-    # synchronous/streaming call, not a webhook — there's nothing to
-    # verify inbound here. Kept out rather than stubbed to avoid modeling
-    # an integration that doesn't exist. Revisit only if that changes.
+    openrouter_webhook_secret: str = ""
+    # LinkedIn/OpenRouter secrets are placeholders: as of this phase,
+    # neither product has a confirmed real inbound-webhook mechanism for
+    # what this project actually integrates with (LinkedIn's Sign-In/
+    # Share products are outbound-only from our side; OpenRouter's
+    # completions API is synchronous). Built anyway because spec §8
+    # Service 1 lists all three endpoints with no hedge. See
+    # docs/EVENT_CONTRACTS.md's "Webhook relay events" section.
 
 
 settings = Settings()
