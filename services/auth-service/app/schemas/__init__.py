@@ -9,6 +9,8 @@ from app.schemas.auth import (
     ForgotPasswordRequest,
     ResetPasswordRequest,
     MessageResponse,
+    IssueScopedTokenRequest, 
+    ScopedTokenResponse,
 )
 
 __all__ = [
