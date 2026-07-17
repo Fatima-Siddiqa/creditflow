@@ -1,7 +1,7 @@
 import secrets
 
 from app.models import PasswordResetToken
-from app.schemas import ForgotPasswordRequest, ResetPasswordRequest
+from app.schemas import ForgotPasswordRequest, ResetPasswordRequest, IssueScopedTokenRequest, ScopedTokenResponse
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.dependencies import check_login_rate_limit, register_failed_login, clear_login_attempts, get_current_user
+from app.dependencies import check_login_rate_limit, register_failed_login, clear_login_attempts, get_current_user, verify_internal_service_secret
 from app.events import publish_event
 from app.models import User, Credential, EmailVerificationToken, RefreshToken
 from app.redis_client import redis_client
@@ -219,3 +219,30 @@ def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
     db.commit()
 
     return MessageResponse(message="Password reset successfully.")
+
+@router.post(
+    "/issue-scoped-token",
+    response_model=ScopedTokenResponse,
+    dependencies=[Depends(verify_internal_service_secret)],
+)
+def issue_scoped_token(body: IssueScopedTokenRequest, db: Session = Depends(get_db)):
+    """Internal, service-to-service only (see verify_internal_service_secret).
+    Called by User/Tenant Service (Phase 4) after IT has already verified
+    the user belongs to account_id with this role — this service does not
+    re-check membership itself, since it owns identity, not accounts.
+
+    Mints a fresh account-scoped access token only. Does not rotate or
+    revoke the user's existing refresh token, and does not touch any other
+    account's jti — a user can hold concurrently-valid scoped tokens for
+    several accounts at once (e.g. two browser tabs on two workspaces).
+    """
+    user = db.query(User).filter(User.id == body.user_id).first()
+    if not user:
+        raise _error("user_not_found", "User does not exist.", status.HTTP_404_NOT_FOUND)
+    if not user.is_verified:
+        raise _error("email_not_verified", "User's email is not verified.", status.HTTP_403_FORBIDDEN)
+
+    access_token, jti = create_access_token(user_id=user.id, account_id=body.account_id, role=body.role)
+    redis_client.setex(f"jti:{jti}", settings.access_token_ttl_minutes * 60, "1")
+
+    return ScopedTokenResponse(access_token=access_token)
