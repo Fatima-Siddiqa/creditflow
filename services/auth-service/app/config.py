@@ -20,5 +20,12 @@ class Settings(BaseSettings):
     login_rate_limit_max_attempts: int = 5
     login_rate_limit_window_seconds: int = 300
 
-
+    # Shared secret gating POST /auth/issue-scoped-token. This endpoint mints
+    # a JWT for a given (user_id, account_id, role) with no password check —
+    # it trusts the caller to have already verified membership. Only
+    # User/Tenant Service (Phase 4) should ever call it, service-to-service,
+    # never the browser. Local default below is a placeholder; override via
+    # .env for anything beyond solo local dev, same convention as the
+    # Postgres/RabbitMQ defaults elsewhere in this file.
+    internal_service_secret: str = "dev-only-internal-secret-change-me"
 settings = Settings()
