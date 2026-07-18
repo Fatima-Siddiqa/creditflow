@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
+from app.api.accounts import router as accounts_router
 from app.api.invites import router as invites_router
 from app.db import engine
 from app.events.identity_consumer import run_consumer
