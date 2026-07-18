@@ -5,8 +5,10 @@ Phase 2 (auth-service) implemented and pytest-covered end-to-end (signup,
 verify-email, login, refresh with reuse detection, logout, rate limiting).
 Phase 3 (api-gateway) implemented and pytest-covered (routing, JWT
 verification, rate limiting, webhook intake/dedup/relay, SSE re-stream).
-CI: api-gateway has a working test+build workflow; auth-service's is being
-backfilled now (tracked from PR #1). Phases 4+ not started.
+Phase 4 (user-service) in progress — PR #1 (scaffold: models, migration,
+health checks, docker-compose + CI) lands first; endpoints follow in
+PRs #2-7. CI: auth-service and api-gateway both have working test+build
+workflows.
 
 ## Shape
 - 13 FastAPI microservices under `services/`, one React (Vite) frontend

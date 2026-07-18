@@ -28,3 +28,6 @@ services:
   api-gateway:
     ports:
       - "8000:8000"
+  user-service:
+    ports:
+      - "8002:8000"
