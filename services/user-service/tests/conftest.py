@@ -122,7 +122,7 @@ def make_token(rsa_keypair):
 
 
 @pytest.fixture()
-def client(db_session, test_redis_client):
+def client(db_session, test_redis_client, published_events):
     def _override_get_db():
         yield db_session
 
@@ -131,3 +131,28 @@ def client(db_session, test_redis_client):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+@pytest.fixture()
+def published_events(monkeypatch):
+    """Both app.api.accounts and app.api.invites imported publish_event
+    by name at module load time — patching app.events.publisher alone
+    wouldn't reach either of them, same reasoning as auth-service's
+    conftest.py."""
+    calls = []
+
+    async def _fake_publish(event_type, payload, account_id=None):
+        calls.append({"event_type": event_type, "payload": payload, "account_id": account_id})
+
+    monkeypatch.setattr("app.api.accounts.publish_event", _fake_publish)
+    monkeypatch.setattr("app.api.invites.publish_event", _fake_publish)
+    return calls
+
+
+@pytest.fixture()
+def fake_scoped_token(monkeypatch):
+    """Stands in for the real POST /auth/issue-scoped-token call — these
+    tests never need auth-service running."""
+    async def _fake_issue(user_id, account_id, role):
+        return {"access_token": "fake-scoped-token", "token_type": "bearer"}
+
+    monkeypatch.setattr("app.api.invites.issue_scoped_token", _fake_issue)
