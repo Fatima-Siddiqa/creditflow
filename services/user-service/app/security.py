@@ -1,5 +1,6 @@
 import jwt
-
+import hashlib
+import secrets
 from app.config import settings
 
 
@@ -15,3 +16,11 @@ def decode_access_token(token: str) -> dict:
     private key and never mints tokens itself (that's auth-service's job,
     via POST /auth/issue-scoped-token for the account-switch case)."""
     return jwt.decode(token, _load_public_key(), algorithms=[settings.jwt_algorithm])
+
+
+def generate_raw_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode()).hexdigest()
