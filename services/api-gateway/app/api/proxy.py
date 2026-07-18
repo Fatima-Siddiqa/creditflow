@@ -49,6 +49,26 @@ async def proxy(path: str, request: Request):
 
     if not is_public_route(request.method, path):
         payload = verify_access_token(request.headers.get("authorization"))
+        # Login/refresh issue identity-only tokens (account_id: null) — see
+        # docs/ARCHITECTURE.md "Internal cross-service calls". A client is
+        # expected to immediately exchange that for an account-scoped token
+        # via GET /api/accounts/{user's account(s)} + POST
+        # /auth/issue-scoped-token before touching anything else. Only the
+        # "auth" prefix itself is exempt, since that's the exchange path.
+        # Revisit when Phase 14 (Admin) lands: SuperAdmin is explicitly
+        # "platform-level, not account-scoped" per spec §8 Service 13, so
+        # this guard will need an admin-role exemption too at that point.
+        if prefix != "auth" and payload["account_id"] is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": {
+                        "code": "account_scope_required",
+                        "message": "This route requires an account-scoped access token. Select or switch to an account before retrying.",
+                        "details": {},
+                    }
+                },
+            )
         enforce_account_rate_limit(payload["account_id"])
         
     body = await request.body()
