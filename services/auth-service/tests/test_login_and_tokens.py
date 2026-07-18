@@ -58,6 +58,46 @@ def test_login_rate_limit_trips_after_max_attempts(client, published_events):
     assert sixth.status_code == 429
     assert sixth.json()["detail"]["error"]["code"] == "too_many_attempts"
 
+def test_ip_rate_limit_trips_across_different_emails(client, monkeypatch):
+    """Confirms the IP-scoped limiter is independent of the email-scoped
+    one: sweeping many DIFFERENT (even nonexistent) emails from one
+    source still gets blocked, which per-email limiting alone could
+    never catch since no single email crosses its own threshold."""
+    monkeypatch.setattr("app.dependencies.settings.login_rate_limit_max_attempts_per_ip", 3)
+
+    for i in range(3):
+        r = client.post("/auth/login", json={"email": f"nonexistent{i}@example.com", "password": "whatever"})
+        assert r.status_code == 401
+
+    fourth = client.post("/auth/login", json={"email": "yet-another@example.com", "password": "whatever"})
+    assert fourth.status_code == 429
+    assert fourth.json()["detail"]["error"]["code"] == "too_many_attempts"
+
+
+def test_successful_login_does_not_reset_ip_counter(client, published_events, monkeypatch):
+    """The IP counter should only ever decay via TTL, never via any
+    single successful login — otherwise an attacker sweeping many
+    accounts could reset their own IP limiter just by guessing one
+    correctly."""
+    monkeypatch.setattr("app.dependencies.settings.login_rate_limit_max_attempts_per_ip", 3)
+    _signup_and_verify(client, published_events)
+
+    # 2 failed attempts against unrelated emails, from the same IP.
+    client.post("/auth/login", json={"email": "x1@example.com", "password": "bad"})
+    client.post("/auth/login", json={"email": "x2@example.com", "password": "bad"})
+
+    # A real, successful login — should NOT touch the IP counter.
+    ok = client.post("/auth/login", json={"email": "alice@example.com", "password": "Passw0rd!"})
+    assert ok.status_code == 200
+
+    # 3rd failed attempt: IP count was 2 before this call, so still allowed through.
+    third = client.post("/auth/login", json={"email": "x3@example.com", "password": "bad"})
+    assert third.status_code == 401
+
+    # 4th failed attempt: IP count is now 3, at the limit — proves the
+    # successful login above did NOT reset it back to 0.
+    fourth = client.post("/auth/login", json={"email": "x4@example.com", "password": "bad"})
+    assert fourth.status_code == 429
 
 def test_refresh_rotates_token_and_old_one_stops_working(client, published_events, db_session):
     _signup_and_verify(client, published_events)

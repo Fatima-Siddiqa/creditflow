@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 7
 
     login_rate_limit_max_attempts: int = 5
+    login_rate_limit_max_attempts_per_ip: int = 20
     login_rate_limit_window_seconds: int = 300
 
     # Shared secret gating POST /auth/issue-scoped-token. This endpoint mints
