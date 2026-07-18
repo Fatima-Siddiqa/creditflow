@@ -14,17 +14,38 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.main import app
 from app.db import get_db, engine, SessionLocal
+from sqlalchemy import event
 
 # Index 15, reserved for tests — never touches the real jti store (index 1).
 TEST_REDIS_URL = "redis://localhost:6380/15"
 
-
 @pytest.fixture()
 def db_session():
+    """Wraps each test in a transaction rolled back afterward. Uses a
+    SAVEPOINT (begin_nested), not just an outer transaction — endpoint
+    code under test calls db.commit() directly (e.g. create_team_account),
+    and a plain outer-transaction wrapper does NOT survive that: commit()
+    ends the real transaction, making the final rollback() a no-op and
+    silently leaking real rows into the dev database. The listener below
+    reopens a fresh SAVEPOINT every time one closes, so commit() inside
+    the endpoint only ever closes the SAVEPOINT, never the real
+    transaction — see SQLAlchemy's "Joining a Session into an External
+    Transaction" docs, this is their recommended pattern, not a custom
+    workaround."""
     connection = engine.connect()
     transaction = connection.begin()
     session = SessionLocal(bind=connection)
+
+    nested = connection.begin_nested()
+
+    @event.listens_for(session, "after_transaction_end")
+    def _restart_savepoint(sess, trans):
+        nonlocal nested
+        if not nested.is_active:
+            nested = connection.begin_nested()
+
     yield session
+
     session.close()
     transaction.rollback()
     connection.close()
