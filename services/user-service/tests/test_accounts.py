@@ -1,5 +1,5 @@
 import uuid
-
+import httpx
 from app.models import Account, AccountMember
 
 
@@ -144,3 +144,52 @@ def test_list_mine_is_scoped_to_the_calling_user(client, make_token, test_redis_
 
     assert names_a == {"Account A"}
     assert names_b == {"Account B"}
+
+def test_switch_account_returns_scoped_token_for_live_member(
+    client, make_token, test_redis_client, db_session, fake_scoped_token,
+):
+    user_id = uuid.uuid4()
+    account = _seed_membership(db_session, user_id, role="admin", name="Acme")
+
+    token = make_token(jti="j9", sub=str(user_id))
+    test_redis_client.setex("jti:j9", 900, "1")
+
+    resp = client.post(f"/accounts/{account.id}/switch", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["access_token"] == "fake-scoped-token"
+    assert body["account_id"] == str(account.id)
+    assert body["role"] == "admin"  # the caller's ACTUAL current role, not assumed owner
+
+
+def test_switch_account_rejects_non_member(client, make_token, test_redis_client, db_session):
+    other_user = uuid.uuid4()
+    account = _seed_membership(db_session, other_user, role="owner", name="Acme")
+
+    caller = uuid.uuid4()
+    token = make_token(jti="j10", sub=str(caller))
+    test_redis_client.setex("jti:j10", 900, "1")
+
+    resp = client.post(f"/accounts/{account.id}/switch", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error"]["code"] == "not_a_member"
+
+
+def test_switch_account_surfaces_auth_service_failure_as_502(client, make_token, test_redis_client, db_session, monkeypatch):
+    user_id = uuid.uuid4()
+    account = _seed_membership(db_session, user_id, role="owner", name="Acme")
+
+    async def _boom(user_id, account_id, role):
+        raise httpx.HTTPError("boom")
+
+    monkeypatch.setattr("app.api.accounts.issue_scoped_token", _boom)
+
+    token = make_token(jti="j11", sub=str(user_id))
+    test_redis_client.setex("jti:j11", 900, "1")
+
+    resp = client.post(f"/accounts/{account.id}/switch", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 502
+    assert resp.json()["detail"]["error"]["code"] == "auth_service_unavailable"

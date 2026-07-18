@@ -156,3 +156,4 @@ def fake_scoped_token(monkeypatch):
         return {"access_token": "fake-scoped-token", "token_type": "bearer"}
 
     monkeypatch.setattr("app.api.invites.issue_scoped_token", _fake_issue)
+    monkeypatch.setattr("app.api.accounts.issue_scoped_token", _fake_issue)
