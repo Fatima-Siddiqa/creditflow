@@ -18,7 +18,7 @@ def test_endpoints_require_auth(client):
     assert resp.json()["detail"]["error"]["code"] == "missing_token"
 
 
-def test_create_team_account_makes_caller_owner(client, make_token, test_redis_client, db_session):
+def test_create_team_account_makes_caller_owner(client, make_token, test_redis_client, db_session, published_events):
     user_id = uuid.uuid4()
     token = make_token(jti="j1", sub=str(user_id))
     test_redis_client.setex("jti:j1", 900, "1")
@@ -38,6 +38,10 @@ def test_create_team_account_makes_caller_owner(client, make_token, test_redis_c
     )
     assert membership.user_id == user_id
     assert membership.role == "owner"
+
+    assert len(published_events) == 1
+    assert published_events[0]["event_type"] == "account.created"
+    assert published_events[0]["payload"]["account_id"] == body["id"]
 
 
 def test_create_team_account_works_with_account_agnostic_token(client, make_token, test_redis_client):

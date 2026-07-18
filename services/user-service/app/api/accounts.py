@@ -8,7 +8,7 @@ from app.db import get_db
 from app.dependencies import get_current_payload, get_live_membership
 from app.models import Account, AccountMember
 from app.schemas import AccountResponse, AccountSummary, CreateAccountRequest
-
+from app.events import publish_event
 router = APIRouter()
 
 
@@ -27,26 +27,26 @@ def _to_account_response(db: Session, account: Account) -> AccountResponse:
 
 
 @router.post("/accounts", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
-def create_team_account(
+async def create_team_account(
     body: CreateAccountRequest,
     db: Session = Depends(get_db),
     payload: dict = Depends(get_current_payload),
 ):
-    """Any authenticated user can create a team account, regardless of
-    which (if any) account their current token is scoped to — per spec
-    §8 Service 3: 'support explicit create team flow (type: team)'.
-    Deliberately does NOT require an already-account-scoped token: a
-    plain login token (account_id=null) is enough, since you don't need
-    to already belong to an account to create a new one."""
     user_id = uuid.UUID(payload["sub"])
 
     account = Account(type="team", name=body.name, plan_tier="free")
     db.add(account)
-    db.flush()  # assigns account.id before the membership row references it
+    db.flush()
 
     db.add(AccountMember(account_id=account.id, user_id=user_id, role="owner"))
     db.commit()
     db.refresh(account)
+
+    await publish_event(
+        "account.created",
+        payload={"account_id": str(account.id), "type": account.type, "name": account.name},
+        account_id=account.id,
+    )
 
     return _to_account_response(db, account)
 
