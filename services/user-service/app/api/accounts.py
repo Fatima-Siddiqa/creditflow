@@ -51,6 +51,38 @@ def create_team_account(
     return _to_account_response(db, account)
 
 
+@router.get("/accounts/mine", response_model=list[AccountSummary])
+def list_my_accounts(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_payload),
+):
+    """Powers the account switcher. Self-only by construction — the caller
+    identity comes from their own JWT (payload['sub']), not a path param,
+    so there's no other user's memberships this endpoint could even be
+    asked to return. Registered ABOVE /accounts/{account_id} deliberately:
+    FastAPI matches routes top-to-bottom, and 'mine' would otherwise be
+    swallowed by {account_id}'s UUID parser as if it were a malformed ID."""
+    user_id = uuid.UUID(payload["sub"])
+
+    rows = (
+        db.query(AccountMember, Account)
+        .join(Account, Account.id == AccountMember.account_id)
+        .filter(AccountMember.user_id == user_id)
+        .all()
+    )
+
+    return [
+        AccountSummary(
+            account_id=account.id,
+            name=account.name,
+            type=account.type,
+            plan_tier=account.plan_tier,
+            role=membership.role,
+        )
+        for membership, account in rows
+    ]
+
+
 @router.get("/accounts/{account_id}", response_model=AccountResponse)
 def get_account_profile(
     account_id: uuid.UUID,
@@ -72,47 +104,3 @@ def get_account_profile(
         )
 
     return _to_account_response(db, account)
-
-
-@router.get("/users/{user_id}/accounts", response_model=list[AccountSummary])
-def list_user_accounts(
-    user_id: uuid.UUID,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(get_current_payload),
-):
-    """Powers the account switcher. Deliberately self-only: a user can
-    list only their OWN memberships, never someone else's — which
-    accounts you belong to is private, not something any authenticated
-    caller should be able to enumerate about another user. (A future
-    SuperAdmin cross-account view, if ever needed, belongs in the Admin
-    Service with its own elevated checks, not here.)"""
-    caller_id = uuid.UUID(payload["sub"])
-    if caller_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "error": {
-                    "code": "self_only",
-                    "message": "You can only list your own account memberships.",
-                    "details": {},
-                }
-            },
-        )
-
-    rows = (
-        db.query(AccountMember, Account)
-        .join(Account, Account.id == AccountMember.account_id)
-        .filter(AccountMember.user_id == user_id)
-        .all()
-    )
-
-    return [
-        AccountSummary(
-            account_id=account.id,
-            name=account.name,
-            type=account.type,
-            plan_tier=account.plan_tier,
-            role=membership.role,
-        )
-        for membership, account in rows
-    ]

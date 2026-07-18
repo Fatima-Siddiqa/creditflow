@@ -93,7 +93,7 @@ def test_get_account_profile_seat_count_reflects_multiple_members(client, make_t
     assert resp.json()["seat_count"] == 3
 
 
-def test_list_own_accounts_returns_all_memberships(client, make_token, test_redis_client, db_session):
+def test_list_mine_returns_all_memberships(client, make_token, test_redis_client, db_session):
     user_id = uuid.uuid4()
     _seed_membership(db_session, user_id, role="owner", name="First")
     _seed_membership(db_session, user_id, role="member", name="Second")
@@ -101,7 +101,7 @@ def test_list_own_accounts_returns_all_memberships(client, make_token, test_redi
     token = make_token(jti="j6", sub=str(user_id))
     test_redis_client.setex("jti:j6", 900, "1")
 
-    resp = client.get(f"/users/{user_id}/accounts", headers={"Authorization": f"Bearer {token}"})
+    resp = client.get("/accounts/mine", headers={"Authorization": f"Bearer {token}"})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -113,13 +113,30 @@ def test_list_own_accounts_returns_all_memberships(client, make_token, test_redi
     assert roles_by_name["Second"] == "member"
 
 
-def test_cannot_list_another_users_accounts(client, make_token, test_redis_client):
-    caller_id = uuid.uuid4()
-    other_user_id = uuid.uuid4()
-    token = make_token(jti="j7", sub=str(caller_id))
+def test_list_mine_is_scoped_to_the_calling_user(client, make_token, test_redis_client, db_session):
+    """Two different users, each a member of their own account — user A's
+    /accounts/mine must never include user B's account, and vice versa.
+    Replaces the old test_cannot_list_another_users_accounts, which tested
+    a user_id path param that no longer exists now that caller identity
+    comes from the JWT alone (see GET /accounts/mine)."""
+    user_a = uuid.uuid4()
+    user_b = uuid.uuid4()
+    _seed_membership(db_session, user_a, role="owner", name="Account A")
+    _seed_membership(db_session, user_b, role="owner", name="Account B")
+
+    token_a = make_token(jti="j7", sub=str(user_a))
     test_redis_client.setex("jti:j7", 900, "1")
+    token_b = make_token(jti="j8", sub=str(user_b))
+    test_redis_client.setex("jti:j8", 900, "1")
 
-    resp = client.get(f"/users/{other_user_id}/accounts", headers={"Authorization": f"Bearer {token}"})
+    resp_a = client.get("/accounts/mine", headers={"Authorization": f"Bearer {token_a}"})
+    resp_b = client.get("/accounts/mine", headers={"Authorization": f"Bearer {token_b}"})
 
-    assert resp.status_code == 403
-    assert resp.json()["detail"]["error"]["code"] == "self_only"
+    assert resp_a.status_code == 200
+    assert resp_b.status_code == 200
+
+    names_a = {entry["name"] for entry in resp_a.json()}
+    names_b = {entry["name"] for entry in resp_b.json()}
+
+    assert names_a == {"Account A"}
+    assert names_b == {"Account B"}
