@@ -71,7 +71,42 @@ signed payload would ever arrive here. Revisit when Phase 11 (Social
 Publishing) is built and LinkedIn's actual integration surface is known.
 
 ## Outbox pattern and idempotent consumers
-_(added next)_
+## Idempotent consumers
+Every consuming service owns a `processed_events(event_id UUID PRIMARY KEY,
+processed_at TIMESTAMPTZ)` table in its own schema. The check-and-insert
+happens in the *same transaction* as the business-logic write it guards —
+see `services/user-service/app/events/identity_consumer.py`'s
+`create_account_for_registered_user` for the reference implementation
+every later consumer (billing, credits, usage, content, scheduler...)
+should copy:
+
+\`\`\`python
+inserted = db.execute(
+    text("INSERT INTO <schema>.processed_events (event_id) VALUES (:id) "
+         "ON CONFLICT DO NOTHING RETURNING event_id"),
+    {"id": event_id},
+).fetchone()
+if inserted is None:
+    return  # already handled
+# ... business logic, same transaction ...
+\`\`\`
+
+## Consumer retry / DLQ pattern
+Every consumer queue is declared with `x-dead-letter-exchange` pointing at
+a `<queue-name>.dlx` fanout exchange, bound to a `<queue-name>.dlq` durable
+queue. On a processing failure, the message is republished to its own
+source exchange with an incremented `x-retry-count` header (up to 3
+attempts) rather than requeued in place — this avoids a tight
+requeue/fail busy-loop against a broker that has no built-in delay. After
+the retry budget is exhausted, the message is rejected with
+`requeue=False`, which the queue's DLX configuration routes to its DLQ.
+See `identity_consumer.py`'s `_process_message` for the reference
+implementation.
+
+## Outbox pattern
+Deferred to billing-service (PR set for Phase 5) and credits-service —
+neither exists yet. See the original phase-planning doc for the pattern;
+it'll be documented here for real once billing-service implements it.
 
 ## Note on early-phase publishing
 An exchange can exist and receive published messages before any

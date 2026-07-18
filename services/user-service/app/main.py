@@ -1,8 +1,24 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, status
 
 from app.db import engine
+from app.events.identity_consumer import run_consumer
 
-app = FastAPI(title="CreditFlow User/Tenant Service")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    consumer_task = asyncio.create_task(run_consumer())
+    yield
+    consumer_task.cancel()
+    try:
+        await consumer_task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(title="CreditFlow User/Tenant Service", lifespan=lifespan)
 
 # No routers yet — endpoints land in PR #3 onward.
 
