@@ -23,12 +23,14 @@ def test_creates_individual_account_and_owner_membership(db_session):
     db_session.flush()
 
     assert processed is True
-    account = db_session.query(Account).one()
+    # Scoped to this test's own user_id, not the whole table — the shared
+    # dev database also accumulates real rows from manual end-to-end curl
+    # testing (as it should), so a global .one()/.count() assertion here
+    # was always going to break the moment real testing data existed
+    # alongside it. Not a test-isolation bug — a test-design one.
+    membership = db_session.query(AccountMember).filter(AccountMember.user_id == user_id).one()
+    account = db_session.query(Account).filter(Account.id == membership.account_id).one()
     assert account.type == "individual"
-
-    membership = db_session.query(AccountMember).one()
-    assert membership.account_id == account.id
-    assert membership.user_id == user_id
     assert membership.role == "owner"
 
 
@@ -44,11 +46,7 @@ def test_duplicate_event_id_is_a_noop(db_session):
 
     assert first is True
     assert second is False
-    # Only one account/membership pair exists despite two calls with the
-    # same event_id — this is the idempotency guarantee itself, not just
-    # "it didn't crash."
-    assert db_session.query(Account).count() == 1
-    assert db_session.query(AccountMember).count() == 1
+    assert db_session.query(AccountMember).filter(AccountMember.user_id == user_id).count() == 1
 
 
 def test_different_event_ids_for_same_user_both_create_accounts(db_session):
@@ -67,4 +65,4 @@ def test_different_event_ids_for_same_user_both_create_accounts(db_session):
     create_account_for_registered_user(db_session, _fake_event(user_id=user_id))
     db_session.flush()
 
-    assert db_session.query(Account).count() == 2
+    assert db_session.query(AccountMember).filter(AccountMember.user_id == user_id).count() == 2

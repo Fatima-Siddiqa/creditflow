@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, status
-
+from app.api.accounts import router as accounts_router
 from app.db import engine
 from app.events.identity_consumer import run_consumer
 
@@ -19,6 +19,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="CreditFlow User/Tenant Service", lifespan=lifespan)
+
+app.include_router(accounts_router)
 
 # No routers yet — endpoints land in PR #3 onward.
 
