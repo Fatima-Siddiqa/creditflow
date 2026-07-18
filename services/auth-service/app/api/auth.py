@@ -4,12 +4,12 @@ from app.models import PasswordResetToken
 from app.schemas import ForgotPasswordRequest, ResetPasswordRequest, IssueScopedTokenRequest, ScopedTokenResponse
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
-from app.dependencies import check_login_rate_limit, register_failed_login, clear_login_attempts, get_current_user, verify_internal_service_secret
+from app.dependencies import check_login_rate_limit, register_failed_login_attempt, clear_login_attempts, get_current_user, verify_internal_service_secret
 from app.events import publish_event
 from app.models import User, Credential, EmailVerificationToken, RefreshToken
 from app.redis_client import redis_client
@@ -112,15 +112,15 @@ def verify_email(body: VerifyEmailRequest, db: Session = Depends(get_db)):
     return MessageResponse(message="Email verified successfully.")
 
 @router.post("/login", response_model=TokenPairResponse)
-async def login(body: LoginRequest, db: Session = Depends(get_db)):
-    check_login_rate_limit(body.email)
+async def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    check_login_rate_limit(body.email, client_ip)
 
     user = db.query(User).filter(User.email == body.email).first()
     credential = db.query(Credential).filter(Credential.user_id == user.id).first() if user else None
 
     if not user or not credential or not verify_password(body.password, credential.password_hash):
-        if user:
-            register_failed_login(body.email)
+        register_failed_login_attempt(body.email if user else None, client_ip)
         raise _error("invalid_credentials", "Email or password is incorrect.", status.HTTP_401_UNAUTHORIZED)
 
     if not user.is_verified:
