@@ -1,7 +1,8 @@
+import hmac
 import uuid
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
@@ -63,3 +64,24 @@ def register_failed_login(email: str) -> None:
 
 def clear_login_attempts(email: str) -> None:
     redis_client.delete(f"login_attempts:{email}")
+
+def verify_internal_service_secret(
+    x_internal_secret: str | None = Header(default=None, alias="X-Internal-Secret"),
+) -> None:
+    """Gates POST /auth/issue-scoped-token — the one endpoint in this
+    service that mints a JWT without a password check. Only a service that
+    knows this shared secret (User/Tenant Service, once Phase 4 exists)
+    should ever call it. hmac.compare_digest avoids a timing side-channel
+    on the comparison, same reasoning as password/token hash comparisons
+    elsewhere in this service."""
+    if not x_internal_secret or not hmac.compare_digest(x_internal_secret, settings.internal_service_secret):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error": {
+                    "code": "invalid_internal_secret",
+                    "message": "Missing or incorrect internal service secret.",
+                    "details": {},
+                }
+            },
+        )
