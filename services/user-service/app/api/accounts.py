@@ -1,13 +1,15 @@
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import get_current_payload, get_live_membership
+from app.internal_auth_client import issue_scoped_token
 from app.models import Account, AccountMember
-from app.schemas import AccountResponse, AccountSummary, CreateAccountRequest
+from app.schemas import AcceptInviteResponse, AccountResponse, AccountSummary, CreateAccountRequest
 from app.events import publish_event
 router = APIRouter()
 
@@ -104,3 +106,22 @@ def get_account_profile(
         )
 
     return _to_account_response(db, account)
+
+@router.post("/accounts/{account_id}/switch", response_model=AcceptInviteResponse)
+async def switch_account(
+    account_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_payload),
+):
+    user_id = uuid.UUID(payload["sub"])
+    membership = get_live_membership(db, account_id, user_id)
+
+    try:
+        token_data = await issue_scoped_token(user_id, account_id, membership.role)
+    except httpx.HTTPError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"error": {"code": "auth_service_unavailable", "message": "Could not mint account-scoped session.", "details": {}}},
+        )
+
+    return AcceptInviteResponse(access_token=token_data["access_token"], account_id=account_id, role=membership.role)
