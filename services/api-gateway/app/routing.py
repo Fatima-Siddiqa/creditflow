@@ -12,6 +12,7 @@ from app.config import settings
 ROUTE_MAP: dict[str, str] = {
     "auth": "auth_service_url",
     "accounts": "user_service_url",
+    "invites": "user_service_url",
     "billing": "billing_service_url",
     "credits": "credits_service_url",
     "usage": "usage_service_url",
