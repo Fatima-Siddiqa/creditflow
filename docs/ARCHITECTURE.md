@@ -70,6 +70,38 @@ belongs to and with what role.
   network position, that actually protects it. Revisit if the gateway ever
   grows route-level access control.
 
+Login issues an identity-only token — scoping is a required follow-up
+
+Per spec §8 Service 2, the JWT a login call returns must carry
+account_id/role. Taken completely literally, that would mean Auth
+Service needs to know a user's account at the moment of login — but Auth
+Service owns identity only (no account tables, per CONVENTIONS.md's "no
+service reads another's schema"), and User/Tenant Service is a separate
+deployable unit. Making login synchronously call User Service to resolve
+this would couple Auth Service's critical path to User Service's
+uptime, undermining the "13 independently deployable services" premise
+the rest of this doc is built on.
+
+Decision: login keeps returning account_id: null / role: null, same
+as today. The client (frontend, or anyone driving the API directly) is
+expected to immediately exchange that for a real scoped token —
+GET /api/accounts (or the equivalent user-accounts-listing endpoint,
+Phase 4) to find the user's account(s), then POST /auth/issue-scoped-token
+— before calling anything else. For the common individual-account case
+(auto-created at signup, Phase 4) this is meant to happen automatically and
+invisibly right after login, not as a user-facing step; it's the same
+mechanism spec §4's Account Switcher uses, just triggered once by default
+instead of only on manual switch.
+
+This is enforced, not just documented: api-gateway's proxy rejects any
+request to a non-auth route with a null account_id (403 account_scope_required, see app/api/proxy.py) — so a client can't
+accidentally use an unscoped token against account-scoped data by skipping
+the exchange step. Known gap: this guard doesn't yet account for
+SuperAdmin, which spec §8 Service 13 describes as "platform-level, not
+account-scoped" — when Phase 14 (Admin Service) lands, this guard needs an
+exemption for admin-role tokens, which will also require deciding how a
+SuperAdmin token gets minted without going through the account-scoping
+flow at all.
 ## Diagram
 _(Add a request-flow / event-flow diagram once the gateway + auth + one
 downstream service exist end-to-end.)_
