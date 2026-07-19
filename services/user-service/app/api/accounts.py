@@ -6,7 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.dependencies import get_current_payload, get_live_membership
+from app.dependencies import get_current_payload, get_live_membership, require_role
 from app.internal_auth_client import issue_scoped_token
 from app.models import Account, AccountMember
 from app.events import publish_event
