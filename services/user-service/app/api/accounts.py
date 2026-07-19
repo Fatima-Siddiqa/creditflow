@@ -9,8 +9,12 @@ from app.db import get_db
 from app.dependencies import get_current_payload, get_live_membership
 from app.internal_auth_client import issue_scoped_token
 from app.models import Account, AccountMember
-from app.schemas import AcceptInviteResponse, AccountResponse, AccountSummary, CreateAccountRequest
 from app.events import publish_event
+from app.constants import VALID_ROLES
+from app.schemas import (
+    AcceptInviteResponse, AccountResponse, AccountSummary, CreateAccountRequest,
+    MemberResponse, UpdateMemberRoleRequest,
+)
 router = APIRouter()
 
 
@@ -27,6 +31,30 @@ def _to_account_response(db: Session, account: Account) -> AccountResponse:
         created_at=account.created_at,
     )
 
+def _get_member_or_404(db: Session, account_id: uuid.UUID, user_id: uuid.UUID) -> AccountMember:
+    """Distinct from get_live_membership in dependencies.py — that one's
+    error message ('You are not a member') describes the CALLER. This
+    looks up the TARGET user being managed, which needs its own 404 with
+    a message that actually matches what's being checked."""
+    member = (
+        db.query(AccountMember)
+        .filter(AccountMember.account_id == account_id, AccountMember.user_id == user_id)
+        .first()
+    )
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "member_not_found", "message": "This user is not a member of this account.", "details": {}}},
+        )
+    return member
+
+
+def _count_owners(db: Session, account_id: uuid.UUID) -> int:
+    return (
+        db.query(AccountMember)
+        .filter(AccountMember.account_id == account_id, AccountMember.role == "owner")
+        .count()
+    )
 
 @router.post("/accounts", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
 async def create_team_account(
@@ -125,3 +153,85 @@ async def switch_account(
         )
 
     return AcceptInviteResponse(access_token=token_data["access_token"], account_id=account_id, role=membership.role)
+
+@router.patch("/accounts/{account_id}/members/{user_id}", response_model=MemberResponse)
+async def update_member_role(
+    account_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: UpdateMemberRoleRequest,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_payload),
+):
+    """Owner/admin only — spec §8 Service 3: 'Role update / member
+    removal endpoints, restricted to owner/admin.' No restriction beyond
+    that on WHICH member's role can be changed — an admin can currently
+    change an owner's role too, not just other admins/members. Documented
+    simplification, not an oversight: the spec only restricts who may
+    call this, not who may be acted on."""
+    if body.role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": {"code": "invalid_role", "message": f"role must be one of: {', '.join(sorted(VALID_ROLES))}.", "details": {}}},
+        )
+
+    caller_id = uuid.UUID(payload["sub"])
+    caller_membership = get_live_membership(db, account_id, caller_id)
+    require_role(caller_membership, {"owner", "admin"})
+
+    target = _get_member_or_404(db, account_id, user_id)
+
+    if target.role == body.role:
+        return MemberResponse(account_id=target.account_id, user_id=target.user_id, role=target.role, joined_at=target.joined_at)
+
+    if target.role == "owner" and body.role != "owner" and _count_owners(db, account_id) == 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": {"code": "last_owner", "message": "Cannot change the role of the last owner.", "details": {}}},
+        )
+
+    target.role = body.role
+    db.commit()
+    db.refresh(target)
+
+    await publish_event(
+        "member.role_updated",
+        payload={"account_id": str(account_id), "user_id": str(user_id), "role": target.role},
+        account_id=account_id,
+    )
+
+    return MemberResponse(account_id=target.account_id, user_id=target.user_id, role=target.role, joined_at=target.joined_at)
+
+
+@router.delete("/accounts/{account_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_member(
+    account_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_payload),
+):
+    """Owner/admin only — same spec bullet as update_member_role. The
+    last-owner guard here is also, incidentally, what protects individual
+    accounts (exactly one member, who is always the owner) from ever
+    being left with zero members — no separate 'last member' check
+    needed, since an individual account's sole member is always its
+    owner, and this guard already blocks removing that owner."""
+    caller_id = uuid.UUID(payload["sub"])
+    caller_membership = get_live_membership(db, account_id, caller_id)
+    require_role(caller_membership, {"owner", "admin"})
+
+    target = _get_member_or_404(db, account_id, user_id)
+
+    if target.role == "owner" and _count_owners(db, account_id) == 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": {"code": "last_owner", "message": "Cannot remove the last owner.", "details": {}}},
+        )
+
+    db.delete(target)
+    db.commit()
+
+    await publish_event(
+        "member.removed",
+        payload={"account_id": str(account_id), "user_id": str(user_id)},
+        account_id=account_id,
+    )
