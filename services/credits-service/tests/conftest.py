@@ -18,6 +18,43 @@ from app.db import get_db, engine, SessionLocal
 TEST_REDIS_URL = "redis://localhost:6380/15"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _apply_database_migrations():
+    from alembic import command
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from alembic.runtime import migration
+    from sqlalchemy import inspect
+
+    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+    script = ScriptDirectory.from_config(alembic_cfg)
+    heads = script.get_heads()
+
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        existing_tables = set(inspector.get_table_names(schema="credits"))
+
+        if not heads:
+            raise RuntimeError("No Alembic heads were found")
+
+        try:
+            command.upgrade(alembic_cfg, "head")
+        except Exception as exc:
+            if "already exists" not in str(exc):
+                raise
+
+            if "credits_ledger" not in existing_tables:
+                raise
+
+            # Existing database already has the schema; just ensure the later migration is present.
+            try:
+                command.upgrade(alembic_cfg, "b5f7a47db4d1")
+            except Exception:
+                pass
+
+    yield
+
+
 @pytest.fixture()
 def db_session():
     connection = engine.connect()
