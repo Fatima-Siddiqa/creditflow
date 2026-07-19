@@ -31,3 +31,6 @@ services:
   user-service:
     ports:
       - "8002:8000"
+  billing-service:
+    ports:
+      - "8003:8000"

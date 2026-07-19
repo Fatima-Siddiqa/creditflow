@@ -120,6 +120,31 @@ services:
       timeout: 5s
       retries: 5
     networks: [creditflow-net]
+  billing-service:
+    build: ./services/billing-service
+    container_name: creditflow-billing-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://creditflow:creditflow@postgres:5432/creditflow
+      DB_SCHEMA: billing
+      REDIS_URL: redis://redis:6379/1
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PRICE_ID_PRO: ${STRIPE_PRICE_ID_PRO}
+      STRIPE_PRICE_ID_TEAM: ${STRIPE_PRICE_ID_TEAM}
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [creditflow-net]
   api-gateway:
     build: ./services/api-gateway
     container_name: creditflow-api-gateway
