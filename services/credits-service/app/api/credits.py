@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import get_current_payload
-from app.models.ledger import CreditLedger, MarketplaceListing
+from app.models.ledger import CreditLedger, MarketplaceListing, TransactionType
 from app.schemas.credits import BalanceResponse, LedgerEntry, MarketplaceCreate, MarketplaceResponse
 
 router = APIRouter()
@@ -48,7 +48,7 @@ def list_credits(listing: MarketplaceCreate, db: Session = Depends(get_db), payl
         id=str(uuid.uuid4()),
         account_id=account_id,
         amount=-listing.amount,
-        transaction_type="MARKETPLACE_SELL",
+        transaction_type=TransactionType.MARKETPLACE_SELL,
         reference_id=new_listing.id,
     )
     db.add(escrow_entry)
