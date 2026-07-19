@@ -5,25 +5,28 @@ from fastapi import FastAPI, HTTPException, status
 from app.api.accounts import router as accounts_router
 from app.api.invites import router as invites_router
 from app.db import engine
-from app.events.identity_consumer import run_consumer
+from app.events.identity_consumer import run_consumer as run_identity_consumer
+from app.events.billing_consumer import run_consumer as run_billing_consumer
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    consumer_task = asyncio.create_task(run_consumer())
+    identity_task = asyncio.create_task(run_identity_consumer())
+    billing_task = asyncio.create_task(run_billing_consumer())
     yield
-    consumer_task.cancel()
-    try:
-        await consumer_task
-    except asyncio.CancelledError:
-        pass
+    for task in (identity_task, billing_task):
+        task.cancel()
+    for task in (identity_task, billing_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="CreditFlow User/Tenant Service", lifespan=lifespan)
 
 app.include_router(accounts_router)
 app.include_router(invites_router)
-# No routers yet — endpoints land in PR #3 onward.
 
 
 @app.get("/healthz")
