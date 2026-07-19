@@ -2,6 +2,7 @@ import httpx
 from app.rate_limiter import enforce_account_rate_limit, enforce_ip_rate_limit
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
+from app.account_scope_exempt_routes import is_account_scope_exempt
 from app.dependencies import verify_access_token
 from app.public_routes import is_public_route
 from app.routing import resolve_service_base_url
@@ -58,7 +59,11 @@ async def proxy(path: str, request: Request):
         # Revisit when Phase 14 (Admin) lands: SuperAdmin is explicitly
         # "platform-level, not account-scoped" per spec §8 Service 13, so
         # this guard will need an admin-role exemption too at that point.
-        if prefix != "auth" and payload["account_id"] is None:
+        if (
+            prefix != "auth"
+            and not is_account_scope_exempt(request.method, path)
+            and payload["account_id"] is None
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={

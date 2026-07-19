@@ -123,3 +123,74 @@ def test_scoped_account_id_passes_through_to_downstream(client, monkeypatch, mak
     resp = client.get("/api/accounts/me", headers=headers)
 
     assert resp.status_code == 200
+
+def test_null_account_id_allowed_on_switch_route(client, monkeypatch, make_token, test_redis_client):
+    """The whole point of /accounts/{id}/switch is taking an unscoped
+    token to a scoped one — it must not be blocked by the guard it
+    exists to route around."""
+
+    async def _fake_forward(method, url, params, content, headers):
+        return httpx.Response(200, json={"access_token": "scoped", "account_id": "x", "role": "owner"})
+
+    monkeypatch.setattr("app.api.proxy._forward", _fake_forward)
+
+    token = make_token(jti="unscoped-jti-3", account_id=None)
+    test_redis_client.setex("jti:unscoped-jti-3", 900, "1")
+
+    resp = client.post(
+        "/api/accounts/0e8fe180-c1ea-4a1f-bbca-8bc6f68ce470/switch",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+
+
+def test_null_account_id_allowed_on_accounts_mine(client, monkeypatch, make_token, test_redis_client):
+    async def _fake_forward(method, url, params, content, headers):
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setattr("app.api.proxy._forward", _fake_forward)
+
+    token = make_token(jti="unscoped-jti-4", account_id=None)
+    test_redis_client.setex("jti:unscoped-jti-4", 900, "1")
+
+    resp = client.get("/api/accounts/mine", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+
+
+def test_null_account_id_allowed_on_invite_accept(client, monkeypatch, make_token, test_redis_client):
+    async def _fake_forward(method, url, params, content, headers):
+        return httpx.Response(200, json={"access_token": "scoped", "account_id": "x", "role": "member"})
+
+    monkeypatch.setattr("app.api.proxy._forward", _fake_forward)
+
+    token = make_token(jti="unscoped-jti-5", account_id=None)
+    test_redis_client.setex("jti:unscoped-jti-5", 900, "1")
+
+    resp = client.post("/api/invites/some-raw-token/accept", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+
+
+def test_null_account_id_still_rejected_on_member_management(client, monkeypatch, make_token, test_redis_client):
+    """Sibling routes under the same 'accounts' prefix must NOT be swept
+    up by the switch/mine/create exemptions — this is the regression this
+    test guards against."""
+
+    async def _fake_forward(method, url, params, content, headers):
+        raise AssertionError("should never reach downstream — rejected at the gateway")
+
+    monkeypatch.setattr("app.api.proxy._forward", _fake_forward)
+
+    token = make_token(jti="unscoped-jti-6", account_id=None)
+    test_redis_client.setex("jti:unscoped-jti-6", 900, "1")
+
+    resp = client.patch(
+        "/api/accounts/some-id/members/some-user",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role": "admin"},
+    )
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error"]["code"] == "account_scope_required"
