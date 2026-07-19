@@ -55,6 +55,11 @@ def _handle_stripe_event(raw_event: dict) -> None:
             if sub:
                 sub.stripe_subscription_id = data.get("subscription")
                 sub.status = "active"
+            else:
+                logger.warning(
+                    "checkout.session.completed for unknown stripe customer %s (event %s)",
+                    customer_id, stripe_event_id,
+                )
 
         elif stripe_event_type == "invoice.paid":
             customer_id = data["customer"]
