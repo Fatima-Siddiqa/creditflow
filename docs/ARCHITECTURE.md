@@ -1,17 +1,12 @@
 # CreditFlow — Architecture
 
 ## Status
-Phase 2 (auth-service) implemented and pytest-covered end-to-end (signup,
-verify-email, login, refresh with reuse detection, logout, rate limiting).
-Phase 3 (api-gateway) implemented and pytest-covered (routing, JWT
-verification, rate limiting, webhook intake/dedup/relay, SSE re-stream).
-CI: api-gateway has a working test+build workflow; auth-service's is being
-backfilled now (tracked from PR #1). Phase 4 (user-service): PR #1 (scaffold)
-merged; PR #2 (identity consumer — auto-creates an individual account on
-`user.registered`, establishes the idempotency + bounded-retry/DLQ
-pattern every later consumer copies) in progress. PRs #3-7 (accounts
-endpoints, invites, member management, account switcher, billing
-consumer) not started.
+Phase 2 (auth-service) and Phase 3 (api-gateway) implemented and
+pytest-covered end-to-end. Phase 4 (user-service): PRs #1-5 and the
+billing-events consumer merged. PR #6 (member role update + removal,
+with the last-owner guard) closes the final literal spec §8 Service 3
+gap — Phase 4 is now feature-complete pending this PR's merge. Phase 5
+(billing-service) not started.
 
 ## Shape
 - 13 FastAPI microservices under `services/`, one React (Vite) frontend
