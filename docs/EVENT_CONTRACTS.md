@@ -26,7 +26,7 @@ publisher confirms required, `delivery_mode=2`.
 | Exchange | Publisher | Event types |
 |---|---|---|
 | `identity_events` | auth-service | `user.registered`, `user.logged_in`, `user.password_reset_requested` |
-| `account_events` | user-service | `account.created`, `account.updated`, `member.joined`, `invite.created` |
+| `account_events` | user-service | `account.created`, `account.updated`, `member.joined`, `invite.created`, `member.role_updated`, `member.removed` |
 | `billing_events` | billing-service | `invoice.paid`, `payment.failed`, `subscription.updated`, `subscription.downgraded`, `refund.issued` |
 | `credits_events` | credits-service | `credits.credited`, `credits.debited`, `credits.low_balance` |
 | `usage_events` | usage-service | `usage.threshold_reached` |

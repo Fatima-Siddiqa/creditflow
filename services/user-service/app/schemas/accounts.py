@@ -30,3 +30,13 @@ class AccountSummary(BaseModel):
     type: str
     plan_tier: str
     role: str
+
+class UpdateMemberRoleRequest(BaseModel):
+    role: str
+
+
+class MemberResponse(BaseModel):
+    account_id: uuid.UUID
+    user_id: uuid.UUID
+    role: str
+    joined_at: datetime
