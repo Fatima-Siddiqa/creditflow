@@ -1,29 +1,43 @@
-from fastapi import FastAPI
-from app.api import credits
-from app.db import engine, Base
-import threading
-from app.events.billing_consumer import process_billing_event
-# Assuming you have a standard rabbitmq connection script in your boilerplate
-from app.events.rabbitmq import start_consuming 
+import asyncio
+from contextlib import asynccontextmanager
 
-# Create tables (In production, rely on Alembic, but this is a fallback)
-Base.metadata.create_all(bind=engine)
+from fastapi import FastAPI, HTTPException, status
 
-app = FastAPI(title="Credits & Marketplace Service", version="1.0.0")
+from app.api.credits import router as credits_router
+from app.db import engine
+from app.events.billing_consumer import run_consumer
 
-# Include the routers we created
-app.include_router(credits.router, prefix="/credits", tags=["Credits"])
 
-@app.on_event("startup")
-def startup_event():
-    # Start the RabbitMQ consumer in a background thread so it doesn't block the API
-    consumer_thread = threading.Thread(
-        target=start_consuming, 
-        args=("billing.events", process_billing_event),
-        daemon=True
-    )
-    consumer_thread.start()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    consumer_task = asyncio.create_task(run_consumer())
+    yield
+    consumer_task.cancel()
+    try:
+        await consumer_task
+    except asyncio.CancelledError:
+        pass
 
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+
+app = FastAPI(title="CreditFlow Credits & Marketplace Service", lifespan=lifespan)
+app.include_router(credits_router, prefix="/credits", tags=["Credits"])
+
+
+@app.get("/healthz")
+def healthz():
+    """Liveness only -- no dependency checks. Per CONVENTIONS.md."""
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+def readyz():
+    """Actually pings Postgres. Per CONVENTIONS.md."""
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("SELECT 1")
+        return {"status": "ok"}
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": {"code": "not_ready", "message": "Database unavailable.", "details": {}}},
+        )
