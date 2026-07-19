@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
+from dataclasses import dataclass
 
 import aio_pika
 from aio_pika import DeliveryMode, ExchangeType, Message
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import SessionLocal
+from app.events import publish_event
 from app.models import Account, AccountMember
 
 logger = logging.getLogger("identity_consumer")
@@ -21,11 +23,22 @@ DLQ_NAME = f"{QUEUE_NAME}.dlq"
 MAX_RETRIES = 3
 
 
-def create_account_for_registered_user(db: Session, event: dict) -> bool:
+@dataclass
+class ConsumeResult:
+    """Richer than a bare bool so the caller can publish account.created/
+    member.joined (EVENT_CONTRACTS.md lists this service as a publisher of
+    both, for every account-creation path — not just the manual ones in
+    app/api/accounts.py and app/api/invites.py) without a second DB round
+    trip. `created` keeps the old True/False meaning callers already rely
+    on."""
+    created: bool
+    account_id: uuid.UUID | None = None
+    user_id: uuid.UUID | None = None
+
+
+def create_account_for_registered_user(db: Session, event: dict) -> ConsumeResult:
     """Pure business logic, no RabbitMQ or session-lifecycle concerns —
-    this is what tests exercise directly. Returns True if this event_id was
-    newly processed, False if it was a duplicate (idempotency table already
-    had it) and no account was created.
+    this is what tests exercise directly.
 
     Per spec §8 Service 3: 'Create an Account automatically on signup
     (type: individual).' The registering user becomes its sole owner.
@@ -50,25 +63,26 @@ def create_account_for_registered_user(db: Session, event: dict) -> bool:
 
     if inserted is None:
         logger.info("event %s already processed, skipping", event_id)
-        return False
+        return ConsumeResult(created=False)
 
     account = Account(type="individual", name=None, plan_tier="free")
     db.add(account)
     db.flush()  # assigns account.id before the membership row references it
 
     db.add(AccountMember(account_id=account.id, user_id=user_id, role="owner"))
-    return True
+    return ConsumeResult(created=True, account_id=account.id, user_id=user_id)
 
 
-def _handle_user_registered(event: dict) -> None:
+def _handle_user_registered(event: dict) -> ConsumeResult:
     """Runs in a worker thread (see asyncio.to_thread in _process_message)
     — this service's DB layer is synchronous SQLAlchemy, matching every
     other service in the project, not async. Owns its own session and
     commit/rollback, unlike create_account_for_registered_user above."""
     db = SessionLocal()
     try:
-        create_account_for_registered_user(db, event)
+        result = create_account_for_registered_user(db, event)
         db.commit()
+        return result
     except Exception:
         db.rollback()
         raise
@@ -103,7 +117,7 @@ async def _process_message(message: aio_pika.IncomingMessage, exchange: aio_pika
         return
 
     try:
-        await asyncio.to_thread(_handle_user_registered, event)
+        result = await asyncio.to_thread(_handle_user_registered, event)
         await message.ack()
     except Exception:
         logger.exception("failed to process event %s", event.get("event_id"))
@@ -122,6 +136,35 @@ async def _process_message(message: aio_pika.IncomingMessage, exchange: aio_pika
         else:
             logger.error("event %s exceeded max retries, routing to DLQ", event.get("event_id"))
             await message.reject(requeue=False)  # queue's DLX config routes this to the DLQ
+        return
+
+    if result.created:
+        # Best-effort, not transactional: the DB write is already
+        # committed and durable (idempotent via processed_events) by the
+        # time we get here. If this publish fails, we log and move on
+        # rather than nack-and-retry the inbound message — a redelivery
+        # would just hit the idempotency check and return created=False,
+        # so retrying the INBOUND message can never recover a failed
+        # OUTBOUND publish. A dropped account.created/member.joined here
+        # is a known, accepted gap (see docs/EVENT_CONTRACTS.md) — Billing
+        # Service is the one place spec §7 actually mandates a
+        # transactional outbox; this service doesn't have that guarantee.
+        try:
+            await publish_event(
+                "account.created",
+                {"account_id": str(result.account_id), "type": "individual"},
+                account_id=result.account_id,
+            )
+            await publish_event(
+                "member.joined",
+                {"account_id": str(result.account_id), "user_id": str(result.user_id), "role": "owner"},
+                account_id=result.account_id,
+            )
+        except Exception:
+            logger.exception(
+                "account %s created but failed to publish account.created/member.joined",
+                result.account_id,
+            )
 
 
 async def run_consumer() -> None:

@@ -19,19 +19,16 @@ def test_creates_individual_account_and_owner_membership(db_session):
     user_id = uuid.uuid4()
     event = _fake_event(user_id=user_id)
 
-    processed = create_account_for_registered_user(db_session, event)
+    result = create_account_for_registered_user(db_session, event)
     db_session.flush()
 
-    assert processed is True
-    # Scoped to this test's own user_id, not the whole table — the shared
-    # dev database also accumulates real rows from manual end-to-end curl
-    # testing (as it should), so a global .one()/.count() assertion here
-    # was always going to break the moment real testing data existed
-    # alongside it. Not a test-isolation bug — a test-design one.
+    assert result.created is True
+    assert result.user_id == user_id
     membership = db_session.query(AccountMember).filter(AccountMember.user_id == user_id).one()
     account = db_session.query(Account).filter(Account.id == membership.account_id).one()
     assert account.type == "individual"
     assert membership.role == "owner"
+    assert result.account_id == account.id
 
 
 def test_duplicate_event_id_is_a_noop(db_session):
@@ -44,8 +41,9 @@ def test_duplicate_event_id_is_a_noop(db_session):
     second = create_account_for_registered_user(db_session, event)
     db_session.flush()
 
-    assert first is True
-    assert second is False
+    assert first.created is True
+    assert second.created is False
+    assert second.account_id is None
     assert db_session.query(AccountMember).filter(AccountMember.user_id == user_id).count() == 1
 
 
