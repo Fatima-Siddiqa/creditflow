@@ -54,14 +54,15 @@ def db_session():
 @asynccontextmanager
 async def _noop_lifespan(app):
     """Replaces app.main's real lifespan for HTTP endpoint tests only.
-    The real lifespan starts the identity-events consumer, which tries to
-    open a live RabbitMQ connection on startup — irrelevant to these
-    tests and, when no broker is reachable locally, capable of hanging
-    the whole suite on teardown (connect_robust's retry loop doesn't
-    always cancel promptly). The consumer's actual logic is covered
-    directly by test_identity_consumer.py without touching the app or
-    any broker at all — this fixture doesn't lose coverage, it just stops
-    duplicating a connection attempt that nothing here needed."""
+    The real lifespan starts both the identity_events and billing_events
+    consumers, each of which tries to open a live RabbitMQ connection on
+    startup — irrelevant to these tests and, when no broker is reachable
+    locally, capable of hanging the whole suite on teardown
+    (connect_robust's retry loop doesn't always cancel promptly). Each
+    consumer's actual logic is covered directly by
+    test_identity_consumer.py / test_billing_consumer.py without touching
+    the app or any broker at all — this fixture doesn't lose coverage, it
+    just stops duplicating connection attempts that nothing here needed."""
     yield
 
 
