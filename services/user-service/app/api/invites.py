@@ -16,8 +16,7 @@ from app.security import generate_raw_token, hash_token
 router = APIRouter()
 
 INVITE_TTL_DAYS = 7
-VALID_ROLES = {"owner", "admin", "member"}
-
+from app.constants import VALID_ROLES
 
 def _bad_request(code: str, message: str) -> HTTPException:
     return HTTPException(

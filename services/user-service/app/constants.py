@@ -1,0 +1,1 @@
+VALID_ROLES = {"owner", "admin", "member"}
