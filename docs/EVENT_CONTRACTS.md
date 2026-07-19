@@ -70,7 +70,40 @@ scaffold pending confirmation from the mentor on whether/how a real
 signed payload would ever arrive here. Revisit when Phase 11 (Social
 Publishing) is built and LinkedIn's actual integration surface is known.
 
-## Outbox pattern and idempotent consumers
+## `invoice.paid` payload shape (assumed — Billing Service doesn't exist yet)
+User/Tenant Service (Phase 4) consumes `invoice.paid` from `billing_events`
+to update `accounts.plan_tier` (`services/user-service/app/events/billing_consumer.py`).
+Since Billing Service (Phase 5) hasn't been built, this is this project's
+own documented **assumption** about what it will eventually publish, not a
+contract confirmed against real producer code — Phase 5's own handoff note
+says to pin this down before moving to Phase 6, so this is that.
+
+```json
+{
+  "account_id": "uuid",
+  "plan_tier": "free | pro | team",
+  "amount": 2900
+}
+```
+
+- `account_id`: required. If it doesn't match an existing `accounts` row,
+  the consumer raises rather than silently no-op'ing — see
+  `apply_invoice_paid`'s docstring for why that's deliberate.
+- `plan_tier`: required, written directly to `accounts.plan_tier`.
+- `amount`: present for Credits Service's benefit (Phase 6, "Consumes:
+  `invoice.paid`... to credit an account's balance"); User/Tenant Service
+  doesn't read it.
+- **Not included:** anything about seat count/limits. `accounts.seat_count`
+  isn't a stored column (it's `COUNT(*)` over `account_members`), so
+  there's nothing for this event to adjust there — if Phase 5 or 6 need
+  plan-tier-based seat limits, that's a new decision and a new column, not
+  something this phase's data model already supports.
+
+**When Phase 5 is actually built:** if the real payload differs from this,
+update this section to match reality, not the other way around — this
+block is describing an assumption a consumer was built against, not a
+requirement Billing Service is bound by.
+
 ## Idempotent consumers
 Every consuming service owns a `processed_events(event_id UUID PRIMARY KEY,
 processed_at TIMESTAMPTZ)` table in its own schema. The check-and-insert
