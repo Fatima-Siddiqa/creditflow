@@ -40,3 +40,6 @@ services:
   usage-service:
     ports:
       - "8005:8000"
+  ai-generation-service:
+    ports:
+      - "8006:8000"
