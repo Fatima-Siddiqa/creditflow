@@ -1,11 +1,14 @@
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app import job_registry
 from app.config import settings
 from app.db import get_db
 from app.dependencies import get_current_payload
+from app.generation_worker import run_generation_stream
 from app.models.generation import GenerationJob, GenerationStatus, PromptHistory
 from app.schemas.generation import GenerateRequest, GenerateResponse
 from app.usage_client import check_quota
@@ -24,14 +27,17 @@ async def generate(
     payload: dict = Depends(get_current_payload),
     authorization: str | None = Header(default=None),
 ):
-    """Creates the job row and returns job_id immediately -- does NOT call
-    OpenRouter or start the background stream yet (that's PR #3,
-    feature/ai-service-openrouter-streaming). This lets the frontend open
-    its SSE connection to GET /api/ai/stream/{job_id} on the gateway
-    right after this call returns, per spec §4's 'streaming AI text
-    output (SSE, token-by-token)' requirement -- there's no window where
-    the frontend is waiting on a synchronous generation call to finish
-    before it can start listening."""
+    """Creates the job row, starts the background OpenRouter stream, and
+    returns job_id immediately. Per spec §4's "streaming AI text output
+    (SSE, token-by-token)" requirement, the frontend calls this then
+    immediately opens GET /api/ai/stream/{job_id} on the Gateway -- there
+    is no window where it's waiting on a synchronous generation call to
+    finish before it can start listening.
+
+    asyncio.create_task (not FastAPI's BackgroundTasks) is deliberate:
+    the stream must keep running independent of this request/response's
+    own lifecycle, including if the client disconnects immediately after
+    getting job_id back."""
     account_id = payload["account_id"]
     model = body.model or settings.default_model
     if model not in settings.allowed_models:
@@ -62,5 +68,8 @@ async def generate(
         prompt=body.prompt,
     ))
     db.commit()
+
+    task = asyncio.create_task(run_generation_stream(job_id=job_id, model=model, prompt=body.prompt))
+    job_registry.register(job_id, task)
 
     return GenerateResponse(job_id=job_id, status=GenerationStatus.RUNNING, model=model)
