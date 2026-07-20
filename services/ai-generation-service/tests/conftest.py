@@ -195,6 +195,24 @@ def mock_openrouter_stream(monkeypatch):
 
     return _install
 
+@pytest.fixture(autouse=True)
+def captured_events(monkeypatch):
+    """Autouse so no pre-existing test (written before PR #4 added
+    RabbitMQ publishing in app/generation_worker.py) needs to change to
+    avoid a real network call to RabbitMQ -- app.generation_worker's
+    imported reference to publish_event is replaced with a no-op
+    recorder by default (same binding-site convention as
+    mock_openrouter_stream above: patch where it's imported TO, not
+    where it's defined). Tests that care what got published ask for
+    this fixture by name and read the (event_type, payload, account_id)
+    tuples it collects."""
+    events = []
+
+    async def _fake_publish(event_type, payload, account_id=None):
+        events.append((event_type, payload, account_id))
+
+    monkeypatch.setattr("app.generation_worker.publish_event", _fake_publish)
+    return events
 
 @pytest.fixture()
 def mock_openrouter_error(monkeypatch):
