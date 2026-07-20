@@ -53,7 +53,11 @@ async def stream_ai_generation(job_id: str, request: Request):
     _authenticate_sse_request(request)  # raises 401 via verify_access_token if invalid
 
     async def event_generator():
-        redis_conn = redis_asyncio.Redis.from_url(settings.redis_url)
+        # Must use sse_redis_url (index 3), NOT redis_url (index 0, the
+        # gateway's own rate-limit/dedup db) — ai-generation-service
+        # PUBLISHes on index 3, and Redis PUBLISH/SUBSCRIBE never crosses
+        # logical DB indexes. See docs/CONVENTIONS.md.
+        redis_conn = redis_asyncio.Redis.from_url(settings.sse_redis_url)
         pubsub = redis_conn.pubsub()
         channel = f"sse:{job_id}"
         await pubsub.subscribe(channel)

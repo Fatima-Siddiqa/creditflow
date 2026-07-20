@@ -23,7 +23,7 @@ async def _publish_after_delay(channel: str, messages: list[str], delay: float =
 
 @pytest.mark.asyncio
 async def test_sse_stream_relays_tokens_and_closes_on_done(monkeypatch, make_token, test_redis_client):
-    monkeypatch.setattr("app.config.settings.redis_url", TEST_REDIS_URL)
+    monkeypatch.setattr("app.config.settings.sse_redis_url", TEST_REDIS_URL)
 
     token = make_token(jti="sse-jti")
     test_redis_client.setex("jti:sse-jti", 900, "1")
@@ -51,7 +51,7 @@ async def test_sse_stream_relays_tokens_and_closes_on_done(monkeypatch, make_tok
 
 @pytest.mark.asyncio
 async def test_sse_stream_relays_error_sentinel(monkeypatch, make_token, test_redis_client):
-    monkeypatch.setattr("app.config.settings.redis_url", TEST_REDIS_URL)
+    monkeypatch.setattr("app.config.settings.sse_redis_url", TEST_REDIS_URL)
 
     token = make_token(jti="sse-jti-2")
     test_redis_client.setex("jti:sse-jti-2", 900, "1")
@@ -77,6 +77,39 @@ async def test_sse_stream_relays_error_sentinel(monkeypatch, make_token, test_re
 
 
 @pytest.mark.asyncio
+async def test_sse_stream_uses_sse_redis_url_not_redis_url(monkeypatch, make_token, test_redis_client):
+    """Regression test for the index-0/index-3 bug: this service must
+    subscribe using settings.sse_redis_url. Deliberately points redis_url
+    at a bogus, unreachable value — if sse.py ever reads redis_url again
+    instead of sse_redis_url, this test fails loudly instead of silently
+    dropping every token like the original bug did."""
+    monkeypatch.setattr("app.config.settings.redis_url", "redis://localhost:6380/9")
+    monkeypatch.setattr("app.config.settings.sse_redis_url", TEST_REDIS_URL)
+
+    token = make_token(jti="sse-jti-4")
+    test_redis_client.setex("jti:sse-jti-4", 900, "1")
+
+    job_id = "job-regression-999"
+    publish_task = asyncio.create_task(_publish_after_delay(f"sse:{job_id}", ["ok", "[DONE]"]))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        async with ac.stream(
+            "GET", f"/api/ai/stream/{job_id}", headers={"Authorization": f"Bearer {token}"}
+        ) as resp:
+            assert resp.status_code == 200
+            body = ""
+            async for chunk in resp.aiter_text():
+                body += chunk
+                if "event: done" in body:
+                    break
+
+    await publish_task
+    assert "event: token\ndata: ok" in body
+    assert "event: done" in body
+
+
+@pytest.mark.asyncio
 async def test_sse_stream_requires_auth():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -89,7 +122,7 @@ async def test_sse_stream_requires_auth():
 async def test_sse_stream_accepts_token_via_query_param(monkeypatch, make_token, test_redis_client):
     """Confirms the EventSource-compatible fallback actually works, not
     just the header path."""
-    monkeypatch.setattr("app.config.settings.redis_url", TEST_REDIS_URL)
+    monkeypatch.setattr("app.config.settings.sse_redis_url", TEST_REDIS_URL)
 
     token = make_token(jti="sse-jti-3")
     test_redis_client.setex("jti:sse-jti-3", 900, "1")

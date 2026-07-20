@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     # dedup keys, SSE channel subscriptions) — see docs/CONVENTIONS.md.
     redis_url: str = "redis://localhost:6380/0"
 
+    # Index 3, shared with ai-generation-service (Phase 8): SSE token
+    # pub/sub fan-out. Gateway SUBSCRIBEs here, ai-generation-service
+    # PUBLISHes here — they must agree on the index or messages are
+    # silently dropped (Redis pub/sub never crosses logical DB indexes).
+    # Kept separate from the gateway's own index-0 redis_url on purpose.
+    sse_redis_url: str = "redis://localhost:6380/3"
+
     # Publisher-only: relays verified/deduped webhook events onto the
     # relevant domain exchanges. No queues bound here, no consuming.
     rabbitmq_url: str = "amqp://guest:guest@localhost:5673/"
