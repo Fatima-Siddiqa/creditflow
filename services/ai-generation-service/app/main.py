@@ -1,11 +1,12 @@
 from fastapi import FastAPI, HTTPException, status
 
+from app.api.generation import router as generation_router
 from app.db import engine
 
 app = FastAPI(title="CreditFlow AI Generation Service")
+app.include_router(generation_router, prefix="/ai", tags=["Generation"])
 
-# No routers yet -- POST /generate lands in PR #2 (feature/ai-service-generate-endpoint).
-# No lifespan/consumer_task either: per spec §8 Service 7's event contract
+# No lifespan/consumer_task: per spec §8 Service 7's event contract
 # ("Consumes: none"), this service is a publisher only, so there's no
 # RabbitMQ consumer to start on startup (contrast with usage-service's
 # app/main.py, which does need one).
