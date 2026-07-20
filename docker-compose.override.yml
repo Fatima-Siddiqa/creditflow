@@ -34,3 +34,9 @@ services:
   billing-service:
     ports:
       - "8003:8000"
+  credits-service:
+    ports:
+      - "8004:8000"
+  usage-service:
+    ports:
+      - "8005:8000"
