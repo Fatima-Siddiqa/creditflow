@@ -10,7 +10,7 @@ from app.db import get_db
 from app.dependencies import get_current_payload
 from app.generation_worker import run_generation_stream
 from app.models.generation import GenerationJob, GenerationStatus, PromptHistory
-from app.schemas.generation import GenerateRequest, GenerateResponse
+from app.schemas.generation import CancelResponse, GenerateRequest, GenerateResponse
 from app.usage_client import check_quota
 
 router = APIRouter()
@@ -73,3 +73,58 @@ async def generate(
     job_registry.register(job_id, task)
 
     return GenerateResponse(job_id=job_id, status=GenerationStatus.RUNNING, model=model)
+
+
+@router.post("/generate/{job_id}/cancel", response_model=CancelResponse, status_code=status.HTTP_202_ACCEPTED)
+def cancel(
+    job_id: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_payload),
+):
+    """Spec §8 Service 7: 'Support cancellation of an in-flight stream
+    (job_id-based).' Two independent checks have to both pass before we
+    touch the task:
+
+    1. The generation_jobs row must exist, belong to the caller's own
+       account, and still be RUNNING -- a DB-level check, so it's
+       authoritative even across a process restart (unlike #2 below).
+       A job that isn't found OR isn't owned by this account gets the
+       SAME 404 either way, so this endpoint can't be used to probe
+       which job_ids exist on other accounts.
+    2. job_registry must actually hold a live, not-yet-finished
+       asyncio.Task for this job_id -- the in-memory registry
+       (app/job_registry.py) only reflects tasks THIS process is running.
+       A row stuck at RUNNING with no matching registry entry (this
+       process restarted after the job started, or the worker's own
+       `finally` already discarded it moments ago in a race) is a real,
+       distinct failure mode from #1 and gets its own check rather than
+       silently no-op'ing.
+
+    Deliberately does NOT await the task or flip generation_jobs.status
+    itself -- that's still entirely the worker's job (PR #4's
+    asyncio.CancelledError handler in app/generation_worker.py), so
+    there's exactly one code path that ever writes CANCELLED to the DB
+    or decides what does/doesn't get published on cancellation.
+    """
+    job = db.query(GenerationJob).filter(GenerationJob.id == job_id).one_or_none()
+    if job is None or job.account_id != payload["account_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=_error("job_not_found", "No such generation job for this account."),
+        )
+
+    if job.status != GenerationStatus.RUNNING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_error("job_not_running", f"Job is '{job.status.value}', not running."),
+        )
+
+    task = job_registry.get(job_id)
+    if task is None or task.done():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_error("job_not_running", "Job is not currently running in this process."),
+        )
+
+    task.cancel()
+    return CancelResponse(job_id=job_id, status="cancelling")
