@@ -1,0 +1,88 @@
+name: ai-generation-service CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["services/ai-generation-service/**"]
+  push:
+    branches: [dev, main]
+    paths: ["services/ai-generation-service/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: creditflow
+          POSTGRES_PASSWORD: creditflow
+          POSTGRES_DB: creditflow
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U creditflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r services/ai-generation-service/requirements.txt
+
+      - name: Create ai schema
+        run: |
+          python -c "
+          import psycopg2
+          conn = psycopg2.connect(
+              host='localhost', port=5433,
+              user='creditflow', password='creditflow', dbname='creditflow',
+          )
+          conn.autocommit = True
+          cur = conn.cursor()
+          cur.execute('CREATE SCHEMA IF NOT EXISTS ai')
+          cur.close()
+          conn.close()
+          "
+
+      - name: Run migrations
+        working-directory: services/ai-generation-service
+        run: alembic upgrade head
+
+      - name: Run tests
+        working-directory: services/ai-generation-service
+        run: pytest tests -v
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Compute lowercase image owner
+        id: prep
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: services/ai-generation-service
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/${{ steps.prep.outputs.owner }}/ai-generation-service:${{ github.sha }}
