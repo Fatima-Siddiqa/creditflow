@@ -17,8 +17,14 @@ target_metadata = Base.metadata
 
 def run_migrations_offline():
     url = config.get_main_option("sqlalchemy.url")
-    # Removed version_table_schema and include_schemas
-    context.configure(url=url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        version_table_schema=settings.db_schema,
+        include_schemas=True,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
     with context.begin_transaction():
         context.run_migrations()
 
@@ -26,8 +32,30 @@ def run_migrations_offline():
 def run_migrations_online():
     connectable = engine_from_config(config.get_section(config.config_ini_section, {}), prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
-        # Removed version_table_schema and include_schemas
-        context.configure(connection=connection, target_metadata=target_metadata)
+        # version_table_schema alone isn't enough on a genuinely fresh
+        # database: Alembic creates alembic_version in that schema BEFORE
+        # running any migration's upgrade() function, so a migration-body
+        # `CREATE SCHEMA IF NOT EXISTS` runs too late to help. Create it
+        # here instead, ahead of context.configure.
+        #
+        # This also restores version_table_schema/include_schemas, which
+        # a previous fix here had removed as a workaround for that same
+        # ordering bug -- but doing it that way put credits-service's
+        # migration history in public.alembic_version, the ONE service
+        # out of step with auth/billing/user/usage, all of which scope
+        # it per-service. Sharing public.alembic_version across services
+        # risks two services' revision tracking colliding in the same
+        # table. See the one-time manual fix-up needed for existing
+        # databases in the PR description.
+        connection.exec_driver_sql(f"CREATE SCHEMA IF NOT EXISTS {settings.db_schema}")
+        connection.commit()
+
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            version_table_schema=settings.db_schema,
+            include_schemas=True,
+        )
         with context.begin_transaction():
             context.run_migrations()
 
