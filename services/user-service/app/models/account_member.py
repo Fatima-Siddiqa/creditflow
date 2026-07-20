@@ -16,5 +16,5 @@ class AccountMember(Base):
 
     account_id = Column(UUID(as_uuid=True), ForeignKey("accounts.id"), primary_key=True)
     user_id = Column(UUID(as_uuid=True), primary_key=True, index=True)
-    role = Column(Enum("owner", "admin", "member", name="account_member_role"), nullable=False)
+    role = Column(Enum("owner", "admin", "member", name="account_member_role", schema="tenant"), nullable=False)
     joined_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

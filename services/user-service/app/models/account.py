@@ -13,7 +13,7 @@ class Account(Base):
     __tablename__ = "accounts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    type = Column(Enum("individual", "team", name="account_type"), nullable=False)
+    type = Column(Enum("individual", "team", name="account_type", schema="tenant"), nullable=False)
     name = Column(String, nullable=True)
     plan_tier = Column(String, nullable=False, default="free")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
