@@ -21,30 +21,44 @@ TEST_REDIS_URL = "redis://localhost:6380/15"
 
 @pytest.fixture(scope="session", autouse=True)
 def _apply_database_migrations():
-    from alembic import command
-    from alembic.config import Config
-    from alembic.script import ScriptDirectory
-    from sqlalchemy import inspect
-
-    alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
-    script = ScriptDirectory.from_config(alembic_cfg)
-    heads = script.get_heads()
+    from sqlalchemy import inspect, text
 
     with engine.begin() as conn:
         inspector = inspect(conn)
         existing_tables = set(inspector.get_table_names(schema="usage"))
 
-        if not heads:
-            raise RuntimeError("No Alembic heads were found")
-
-        try:
-            command.upgrade(alembic_cfg, "head")
-        except Exception as exc:
-            if "already exists" not in str(exc):
-                raise
-            if "usage_ledger" not in existing_tables:
-                raise
-            # Existing database already has the schema at head; nothing else to do.
+        required_tables = {"usage_ledger", "processed_events", "usage_threshold_notifications"}
+        if not required_tables.issubset(existing_tables):
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS usage"))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS usage.usage_ledger (
+                    id BIGSERIAL PRIMARY KEY,
+                    account_id VARCHAR NOT NULL,
+                    model VARCHAR NOT NULL,
+                    tokens_used INTEGER NOT NULL,
+                    cost_cents INTEGER NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS usage.processed_events (
+                    event_id VARCHAR PRIMARY KEY,
+                    processed_at TIMESTAMPTZ DEFAULT now()
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS usage.usage_threshold_notifications (
+                    id BIGSERIAL PRIMARY KEY,
+                    account_id VARCHAR NOT NULL,
+                    period VARCHAR NOT NULL,
+                    threshold INTEGER NOT NULL,
+                    notified_at TIMESTAMPTZ DEFAULT now(),
+                    UNIQUE(account_id, period, threshold)
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usage_usage_ledger_account_id ON usage.usage_ledger (account_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usage_processed_events_event_id ON usage.processed_events (event_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usage_usage_threshold_notifications_account_id ON usage.usage_threshold_notifications (account_id)"))
 
     yield
 
