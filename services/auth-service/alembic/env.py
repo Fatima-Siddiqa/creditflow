@@ -73,6 +73,8 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        connection.exec_driver_sql(f"CREATE SCHEMA IF NOT EXISTS {settings.db_schema}")
+        connection.commit()
         context.configure(
             connection=connection, target_metadata=target_metadata,
             version_table_schema=settings.db_schema,
