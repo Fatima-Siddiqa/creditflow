@@ -168,3 +168,43 @@ def mock_quota_exhausted(monkeypatch):
         return {"account_id": "test_acc_123", "period": "2026-07", "used": 100_000, "quota": 100_000, "remaining": 0, "allowed": False}
 
     monkeypatch.setattr("app.api.generation.check_quota", _blocked)
+
+@pytest.fixture(autouse=True)
+def _patch_sse_redis(monkeypatch, test_redis_client):
+    """Same index-15 shared test Redis as everything else (see
+    docs/CONVENTIONS.md's Redis logical DB table) -- just patched into
+    app.sse_publisher's module-level reference instead of
+    app.dependencies', since that's the name PUBLISH calls actually go
+    through (app/sse_publisher.py)."""
+    monkeypatch.setattr("app.sse_publisher.sse_redis_client", test_redis_client)
+
+
+@pytest.fixture()
+def mock_openrouter_stream(monkeypatch):
+    """Patches app.generation_worker's imported reference to
+    stream_chat_completion (not the openrouter_client module directly --
+    same binding-site convention as mock_quota_allowed above) with a
+    fast async generator, so tests never make a real network call."""
+
+    def _install(chunks):
+        async def _fake_stream(model, prompt):
+            for chunk in chunks:
+                yield chunk
+
+        monkeypatch.setattr("app.generation_worker.stream_chat_completion", _fake_stream)
+
+    return _install
+
+
+@pytest.fixture()
+def mock_openrouter_error(monkeypatch):
+    from app.openrouter_client import OpenRouterError
+
+    def _install(reason="OpenRouter timed out"):
+        async def _fake_stream(model, prompt):
+            raise OpenRouterError(reason)
+            yield  # pragma: no cover - makes this an async generator
+
+        monkeypatch.setattr("app.generation_worker.stream_chat_completion", _fake_stream)
+
+    return _install
