@@ -104,6 +104,79 @@ update this section to match reality, not the other way around — this
 block is describing an assumption a consumer was built against, not a
 requirement Billing Service is bound by.
 
+## `ai.generation_completed` / `ai.generation_failed` payload shape (confirmed — Phase 8)
+usage-service's `app/events/ai_consumer.py` (Phase 7) was built against a
+**documented assumption** about this shape before ai-generation-service
+existed — see that file's `apply_generation_completed` docstring, which
+explicitly says to update the assumption (not the consumer) once Phase 8
+is real. As of Phase 8 PR #4 (`services/ai-generation-service/app/generation_worker.py`),
+this is now the confirmed, actually-published shape:
+
+```json
+{
+  "job_id": "uuid",
+  "account_id": "uuid",
+  "model": "openai/gpt-4o-mini",
+  "tokens_used": 42,
+  "prompt_tokens": 12,
+  "completion_tokens": 30,
+  "cost_cents": 0
+}
+```
+
+- `tokens_used`: **required** by usage-service's consumer as written
+  (`int(payload["tokens_used"])`, no `.get()`/default) — this is the
+  total (prompt + completion) token count. Renaming this key without
+  also updating `ai_consumer.py` will dead-letter every completion event
+  after 3 retries and silently stop updating usage ledgers/quota
+  counters.
+- `prompt_tokens` / `completion_tokens`: extra, additive fields
+  usage-service's consumer ignores today. Included for whichever future
+  consumer (admin-service's audit log, a richer usage breakdown) wants
+  the split instead of just the total.
+- `cost_cents`: currently always `0`. ai-generation-service's
+  `stream_chat_completion` doesn't request OpenRouter's usage-accounting
+  extension, so there's no real per-request cost figure to report yet —
+  see `app/generation_worker.py`'s `_estimate_tokens` docstring for why
+  that's deliberate for now, and what a follow-up PR adding real cost
+  tracking would need to touch.
+- `tokens_used`/`prompt_tokens`/`completion_tokens` are themselves an
+  approximation (~4 chars/token), not a real OpenRouter-reported count —
+  same caveat as `cost_cents` above.
+
+`ai.generation_failed` payload:
+
+```json
+{
+  "job_id": "uuid",
+  "account_id": "uuid",
+  "model": "openai/gpt-4o-mini",
+  "reason": "OpenRouter returned 429: rate limited"
+}
+```
+
+No current consumer for `ai.generation_failed` exists yet (usage-service
+only binds `ai.generation_completed`) — published for admin-service's
+future audit log (Phase 14, binds `#` on every exchange) and for anyone
+debugging generation failures via RabbitMQ directly in the meantime.
+
+**Not yet in either payload:** anything distinguishing a "post" (should
+become a content-service draft) from a one-off "chat" completion — spec
+§8 Service 8 says content-service should "Consume `ai.generation_completed`
+to create a draft content record when generation was for a 'post' type,"
+but neither `GenerateRequest` (Phase 8 PR #2) nor `GenerationJob`
+currently carries that distinction. Flagging now, before Phase 9 (Content
+Service) needs it: this needs a small fast-follow (a `content_type` or
+similar field threaded from `POST /ai/generate` through to this event's
+payload) landed *before* Phase 9 starts, not solved by Phase 9 working
+around a payload that doesn't have what its own spec requirement says it
+should.
+
+**When usage-service's `ai_consumer.py` is next touched:** update its
+`apply_generation_completed` docstring to drop the "documented
+assumption, Phase 8 not built yet" language — the shape matches, so
+there's no logic change needed, just a stale comment to clean up.
+
 ## Idempotent consumers
 Every consuming service owns a `processed_events(event_id UUID PRIMARY KEY,
 processed_at TIMESTAMPTZ)` table in its own schema. The check-and-insert
