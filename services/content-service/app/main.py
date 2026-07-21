@@ -1,8 +1,24 @@
 from fastapi import FastAPI, HTTPException, status
 from app.api.content import router as content_router
-from app.db import engine
+import asyncio
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="CreditFlow Content Service")
+from app.db import engine
+from app.events.ai_consumer import run_consumer
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    consumer_task = asyncio.create_task(run_consumer())
+    yield
+    consumer_task.cancel()
+    try:
+        await consumer_task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(title="CreditFlow Content Service", lifespan=lifespan)
 
 app.include_router(content_router, prefix="/content", tags=["Content"])
 
