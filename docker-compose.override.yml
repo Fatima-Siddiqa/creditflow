@@ -43,3 +43,6 @@ services:
   ai-generation-service:
     ports:
       - "8006:8000"
+  content-service:
+    ports:
+      - "8007:8000"
