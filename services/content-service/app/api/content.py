@@ -43,6 +43,24 @@ def _to_response(db: Session, content: Content) -> ContentResponse:
     )
 
 
+@router.post("/{content_id}/image", response_model=ContentResponse)
+async def upload_content_image(content_id: str, file: UploadFile = File(...), db: Session = Depends(get_db), payload: dict = Depends(get_current_payload)):
+    content = _get_owned_content(db, content_id, payload["account_id"])
+    content_dir = os.path.join(settings.upload_dir, content_id)
+    os.makedirs(content_dir, exist_ok=True)
+    file_path = os.path.join(content_dir, file.filename)
+    with open(file_path, "wb") as f:
+        f.write(await file.read())
+
+    content.image_url = file_path
+    content.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(content)
+
+    await publish_event("content.updated", {"content_id": content_id, "account_id": content.account_id}, account_id=content.account_id)
+    return _to_response(db, content)
+
+
 @router.post("", response_model=ContentResponse, status_code=status.HTTP_201_CREATED)
 async def create_content(body: ContentCreate, db: Session = Depends(get_db), payload: dict = Depends(get_current_payload)):
     account_id, user_id = payload["account_id"], payload["sub"]
@@ -127,4 +145,51 @@ async def publish_request_content(content_id: str, db: Session = Depends(get_db)
     db.refresh(content)
 
     await publish_event("content.updated", {"content_id": content_id, "account_id": content.account_id, "status": "published"}, account_id=content.account_id)
+    return _to_response(db, content)
+
+@router.post("/{content_id}/image", response_model=ContentResponse)
+async def upload_content_image(
+    content_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_payload),
+):
+    """Spec §8 Service 8: "Manual image upload endpoint (multipart) for
+    cases where the user supplies their own image instead of generating
+    one." Writes to settings.upload_dir (a local volume in dev/docker-
+    compose; swap for S3 in the AWS bonus) and stores a servable path on
+    Content.image_url -- this is the *current* image for the content
+    item as a whole, distinct from a ContentVersion's own image_url
+    (which records whatever image, if any, was attached back when that
+    particular version was generated).
+
+    Stored under a per-content-id subfolder (upload_dir/{content_id}/{original_filename})
+    rather than renaming to content_id.ext: keeping the original filename
+    in image_url is part of this endpoint's contract (see
+    tests/test_image_upload.py's `.endswith("test.jpg")` assertion) --
+    the subfolder is what prevents two different content items that
+    happen to upload same-named files from colliding, since the
+    filename itself is no longer unique on its own.
+    """
+    content = _get_owned_content(db, content_id, payload["account_id"])
+
+    safe_filename = os.path.basename(file.filename or "upload.bin")
+    content_dir = os.path.join(settings.upload_dir, content_id)
+    os.makedirs(content_dir, exist_ok=True)
+    stored_path = os.path.join(content_dir, safe_filename)
+
+    file_bytes = await file.read()
+    with open(stored_path, "wb") as f:
+        f.write(file_bytes)
+
+    content.image_url = f"/uploads/{content_id}/{safe_filename}"
+    content.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(content)
+
+    await publish_event(
+        "content.updated",
+        {"content_id": content_id, "account_id": content.account_id, "status": content.status.value},
+        account_id=content.account_id,
+    )
     return _to_response(db, content)
