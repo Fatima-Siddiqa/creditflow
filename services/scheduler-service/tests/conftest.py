@@ -1,0 +1,156 @@
+import os, sys
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+
+import jwt as pyjwt
+import pytest
+import redis
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi.testclient import TestClient
+from sqlalchemy import event
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from app.main import app
+from app.db import get_db, engine, SessionLocal
+
+TEST_REDIS_URL = "redis://localhost:6380/15"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _apply_database_migrations():
+    from sqlalchemy import inspect, text
+
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        existing = set(inspector.get_table_names(schema="scheduler"))
+        if "scheduled_posts" not in existing:
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS scheduler"))
+            conn.execute(text("""
+                DO $$ BEGIN
+                    CREATE TYPE scheduler.schedule_status AS ENUM ('pending', 'fired', 'cancelled');
+                EXCEPTION WHEN duplicate_object THEN null;
+                END $$;
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS scheduler.scheduled_posts (
+                    id VARCHAR PRIMARY KEY,
+                    account_id VARCHAR NOT NULL,
+                    content_id VARCHAR NOT NULL,
+                    has_image BOOLEAN NOT NULL,
+                    publish_at TIMESTAMPTZ NOT NULL,
+                    status scheduler.schedule_status NOT NULL,
+                    recurrence_rule JSON,
+                    recurrence_parent_id VARCHAR,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_scheduler_scheduled_posts_account_id ON scheduler.scheduled_posts (account_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_scheduler_scheduled_posts_publish_at ON scheduler.scheduled_posts (publish_at)"))
+    yield
+
+
+@pytest.fixture()
+def db_session():
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = SessionLocal(bind=connection)
+    nested = connection.begin_nested()
+
+    @event.listens_for(session, "after_transaction_end")
+    def _restart(sess, trans):
+        nonlocal nested
+        if not nested.is_active:
+            nested = connection.begin_nested()
+
+    yield session
+    session.close()
+    transaction.rollback()
+    connection.close()
+
+
+@asynccontextmanager
+async def _noop_lifespan(app):
+    yield
+
+
+@pytest.fixture()
+def test_jti_redis_client():
+    client = redis.Redis.from_url(TEST_REDIS_URL, decode_responses=True)
+    client.flushdb()
+    yield client
+    client.flushdb()
+
+
+@pytest.fixture()
+def firing_redis(test_jti_redis_client):
+    """Same physical test DB (index 15) as the jti fixture -- stands in
+    for the Celery/lock Redis (index 2 in real deployment). Only one
+    service's tests run at a time in this solo workflow, so sharing
+    index 15 for both roles is safe, same reasoning usage-service's
+    conftest already uses."""
+    return test_jti_redis_client
+
+
+@pytest.fixture(autouse=True)
+def _patch_jti_redis(monkeypatch, test_jti_redis_client):
+    monkeypatch.setattr("app.dependencies.redis_client", test_jti_redis_client)
+
+
+@pytest.fixture(scope="session")
+def rsa_keypair():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.PKCS8, encryption_algorithm=serialization.NoEncryption()).decode()
+    public_pem = private_key.public_key().public_bytes(encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+    return private_pem, public_pem
+
+
+@pytest.fixture(autouse=True)
+def _patch_jwt_public_key(monkeypatch, rsa_keypair):
+    _, public_pem = rsa_keypair
+    monkeypatch.setattr("app.security._load_public_key", lambda: public_pem)
+
+
+@pytest.fixture()
+def make_token(rsa_keypair):
+    private_pem, _ = rsa_keypair
+
+    def _make(jti="test-jti", sub="test_user", account_id="test_acc_123", role="owner"):
+        now = datetime.now(timezone.utc)
+        payload = {"sub": sub, "account_id": account_id, "role": role, "jti": jti, "iat": now, "exp": now + timedelta(minutes=15)}
+        return pyjwt.encode(payload, private_pem, algorithm="RS256")
+
+    return _make
+
+
+@pytest.fixture()
+def client(db_session):
+    def _override_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = _override_db
+    app.router.lifespan_context = _noop_lifespan
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def auth_headers(make_token, test_jti_redis_client):
+    def _make(account_id="test_acc_123", role="owner", jti="test-jti"):
+        token = make_token(jti=jti, sub="test_user", account_id=account_id, role=role)
+        test_jti_redis_client.set(f"jti:{jti}", "1")
+        return {"Authorization": f"Bearer {token}"}
+
+    return _make
+
+
+@pytest.fixture(autouse=True)
+def mock_content(monkeypatch):
+    """Default: content exists, belongs to caller, approved, no image.
+    Tests override via monkeypatch.setattr('app.api.scheduled_post.get_content', ...)"""
+    async def _fake_get_content(content_id, authorization_header):
+        return {"id": content_id, "status": "approved", "image_url": None}
+
+    monkeypatch.setattr("app.api.scheduled_post.get_content", _fake_get_content)

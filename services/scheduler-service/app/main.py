@@ -1,10 +1,10 @@
 from fastapi import FastAPI, HTTPException, status
 
+from app.api.scheduled_post import router as scheduled_post_router
 from app.db import engine
 
 app = FastAPI(title="CreditFlow Scheduler Service")
-# No router yet -- calendar/schedule endpoints land in PR #2
-# (feature/scheduler-service-calendar-api).
+app.include_router(scheduled_post_router, prefix="/scheduler", tags=["Scheduler"])
 
 
 @app.get("/healthz")
