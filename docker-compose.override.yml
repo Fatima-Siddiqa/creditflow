@@ -46,3 +46,6 @@ services:
   content-service:
     ports:
       - "8007:8000"
+  scheduler-service:
+    ports:
+      - "8008:8000"
