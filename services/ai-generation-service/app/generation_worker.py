@@ -82,10 +82,10 @@ def _mark_completed(db: Session, job_id: str, prompt: str, response_text: str):
         history.response = response_text
     db.commit()
 
-    return account_id, prompt_tokens, completion_tokens, total_tokens, cost_cents
+    content_type = job.content_type if job is not None else "chat"
+    return account_id, prompt_tokens, completion_tokens, total_tokens, cost_cents, content_type
 
-
-async def _publish_completed_event(job_id, account_id, model, prompt_tokens, completion_tokens, total_tokens, cost_cents) -> None:
+async def _publish_completed_event(job_id, account_id, model, prompt_tokens, completion_tokens, total_tokens, cost_cents, content_type, response_text) -> None:
     try:
         await publish_event(
             "ai.generation_completed",
@@ -101,6 +101,8 @@ async def _publish_completed_event(job_id, account_id, model, prompt_tokens, com
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 "cost_cents": cost_cents,
+                "content_type": content_type,
+                "response_text": response_text,
             },
             account_id=account_id,
         )
@@ -158,11 +160,11 @@ async def _run_generation_stream_core(db: Session, job_id: str, model: str, prom
         await _publish_failed_event(job_id, account_id, model, "internal_error")
     else:
         response_text = "".join(response_chunks)
-        account_id, prompt_tokens, completion_tokens, total_tokens, cost_cents = _mark_completed(
+        account_id, prompt_tokens, completion_tokens, total_tokens, cost_cents, content_type = _mark_completed(
             db, job_id, prompt, response_text
         )
         publish_done(job_id)
-        await _publish_completed_event(job_id, account_id, model, prompt_tokens, completion_tokens, total_tokens, cost_cents)
+        await _publish_completed_event(job_id, account_id, model, prompt_tokens, completion_tokens, total_tokens, cost_cents, content_type, response_text)
 
 
 async def run_generation_stream(job_id: str, model: str, prompt: str) -> None:

@@ -60,6 +60,7 @@ async def generate(
         created_by_user_id=payload["sub"],
         model=model,
         status=GenerationStatus.RUNNING,
+        content_type=body.content_type,
     ))
     db.add(PromptHistory(
         id=str(uuid.uuid4()),
@@ -69,7 +70,7 @@ async def generate(
     ))
     db.commit()
 
-    task = asyncio.create_task(run_generation_stream(job_id=job_id, model=model, prompt=body.prompt))
+    task = asyncio.create_task(run_generation_stream(job_id=job_id, model=model, prompt=body.prompt, content_type=body.content_type))
     job_registry.register(job_id, task)
 
     return GenerateResponse(job_id=job_id, status=GenerationStatus.RUNNING, model=model)
