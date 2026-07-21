@@ -150,3 +150,32 @@ def auth_headers(make_token, test_jti_redis_client):
         return {"Authorization": f"Bearer {token}"}
 
     return _make
+
+@pytest.fixture(autouse=True)
+def captured_events(monkeypatch):
+    """No test in this service should depend on a real RabbitMQ broker
+    being reachable -- this was the actual root cause of CI failing on
+    feature/content-service-tests after merge to dev (GitHub Actions has
+    no RabbitMQ service container, so aio_pika.connect_robust() failed
+    outright with a connection error on every endpoint that publishes a
+    content.* event). It happened to pass locally only because a real
+    broker was reachable on localhost there.
+
+    ai-generation-service's tests/conftest.py already established this
+    pattern (also named captured_events) -- mirroring it here so every
+    content.* event publish is a no-op recorder instead of a real
+    network call. Patches app.api.content's imported reference to
+    publish_event (not app.events.publisher's own copy), same binding-
+    site convention used throughout this project's other services: you
+    patch where a name was imported TO, not where it was originally
+    defined. Tests that care what got published ask for this fixture by
+    name and read the (event_type, payload, account_id) tuples it
+    collects; every other test gets it silently and doesn't need to
+    change."""
+    events = []
+
+    async def _fake_publish(event_type, payload, account_id=None):
+        events.append((event_type, payload, account_id))
+
+    monkeypatch.setattr("app.api.content.publish_event", _fake_publish)
+    return events
