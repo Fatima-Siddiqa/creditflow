@@ -22,6 +22,7 @@ def upgrade() -> None:
         'accounts',
         sa.Column('id', sa.UUID(), nullable=False),
         sa.Column('type', sa.Enum('individual', 'team', name='account_type', schema='tenant'), nullable=False),
+        sa.Column('name', sa.String(), nullable=True),
         sa.Column('plan_tier', sa.String(), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint('id'),
