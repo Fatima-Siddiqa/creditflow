@@ -8,6 +8,7 @@ from app.models.generation import GenerationStatus
 class GenerateRequest(BaseModel):
     prompt: str
     model: Optional[str] = None  # falls back to settings.default_model
+    content_type: str = "chat"
 
 
 class GenerateResponse(BaseModel):

@@ -38,7 +38,7 @@ class GenerationJob(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
-
+    content_type = Column(String, nullable=False, default="chat")
 
 class PromptHistory(Base):
     """The actual prompt/response text, one row per job. response stays
