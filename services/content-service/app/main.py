@@ -1,12 +1,10 @@
 from fastapi import FastAPI, HTTPException, status
-
+from app.api.content import router as content_router
 from app.db import engine
 
 app = FastAPI(title="CreditFlow Content Service")
 
-# Routers still to land:
-#   app.include_router(content_router, prefix="/content", tags=["Content"])  # branch 2
-
+app.include_router(content_router, prefix="/content", tags=["Content"])
 
 @app.get("/healthz")
 def healthz():
