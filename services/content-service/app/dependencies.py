@@ -1,4 +1,6 @@
 import jwt
+import hmac
+from app.config import settings
 from fastapi import Header, HTTPException, status
 
 from app.redis_client import redis_client
@@ -42,3 +44,8 @@ def require_publish_role(payload: dict) -> None:
     permission'; member can edit but not approve/publish-request."""
     if payload.get("role") not in {"owner", "admin"}:
         raise _forbidden("insufficient_role", "This action requires the owner or admin role.")
+    
+
+def verify_internal_service_secret(x_internal_secret: str | None = Header(default=None, alias="X-Internal-Secret")) -> None:
+    if not x_internal_secret or not hmac.compare_digest(x_internal_secret, settings.internal_service_secret):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_error("forbidden", "Internal service secret required."))

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.dependencies import get_current_payload, require_publish_role
+from app.dependencies import get_current_payload, require_publish_role, verify_internal_service_secret
 from app.events.publisher import publish_event
 from app.models.content import Content, ContentStatus, ContentVersion
 from app.schemas.content import ContentCreate, ContentResponse, ContentUpdate
@@ -193,3 +193,10 @@ async def upload_content_image(
         account_id=content.account_id,
     )
     return _to_response(db, content)
+
+@router.get("/{content_id}/internal", dependencies=[Depends(verify_internal_service_secret)])
+def get_content_internal(content_id: str, db: Session = Depends(get_db)):
+    content = db.query(Content).filter(Content.id == content_id).one_or_none()
+    if content is None:
+        raise HTTPException(status_code=404, detail=_error("content_not_found", "No such content."))
+    return {"content_id": content.id, "account_id": content.account_id, "body": _latest_body(db, content), "image_url": content.image_url}
