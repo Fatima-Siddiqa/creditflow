@@ -87,10 +87,11 @@ async def test_image_path_registers_uploads_and_references_asset_urn(db_session)
 
 @pytest.mark.asyncio
 async def test_redelivered_event_for_already_published_job_does_not_post_twice(db_session):
-    """apply_content_scheduled itself has no idempotency check -- that
-    lives in _handle_event's processed_events insert, one layer up. This
-    test exercises that layer via _handle_event directly."""
-    from app.events.publish_consumer import _handle_event
+    """Exercises the same two building blocks _handle_event uses
+    (_mark_processed + apply_content_scheduled), directly against
+    db_session -- not through _handle_event itself, which opens its own
+    SessionLocal() and can't see this fixture's uncommitted data."""
+    from app.events.publish_consumer import _mark_processed
 
     _connect(db_session)
     event = _event()
@@ -105,9 +106,15 @@ async def test_redelivered_event_for_already_published_job_does_not_post_twice(d
         mock_resp.raise_for_status = lambda: None
         MockClient.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_resp)
 
-        first_applied, _ = await _handle_event(event)
-        second_applied, _ = await _handle_event(event)  # same event_id, redelivered
+        first_new = _mark_processed(db_session, event["event_id"])
+        first_applied = await apply_content_scheduled(db_session, event) if first_new else None
 
+        second_new = _mark_processed(db_session, event["event_id"])  # same event_id, redelivered
+        second_applied = await apply_content_scheduled(db_session, event) if second_new else None
+
+    assert first_new is True
     assert first_applied is True
-    assert second_applied is False
+    assert second_new is False       # <-- this is the actual idempotency guarantee
+    assert second_applied is None    # apply_content_scheduled never even called again
+
     assert db_session.query(PublishJob).filter(PublishJob.account_id == "acc_123").count() == 1
