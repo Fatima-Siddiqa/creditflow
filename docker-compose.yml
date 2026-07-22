@@ -328,6 +328,33 @@ services:
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
     networks: [creditflow-net]
+  social-publishing-service:
+    build: ./services/social-publishing-service
+    container_name: creditflow-social-publishing-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://creditflow:creditflow@postgres:5432/creditflow
+      DB_SCHEMA: social
+      REDIS_URL: redis://redis:6379/1
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      CONTENT_SERVICE_URL: http://content-service:8000
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET}
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [creditflow-net]
   #   depends_on:
   #     postgres: { condition: service_healthy }
   #     rabbitmq: { condition: service_healthy }

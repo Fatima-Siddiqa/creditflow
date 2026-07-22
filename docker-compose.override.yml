@@ -49,3 +49,6 @@ services:
   scheduler-service:
     ports:
       - "8008:8000"
+  social-publishing-service:
+    ports:
+      - "8009:8000"
