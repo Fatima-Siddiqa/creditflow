@@ -42,12 +42,14 @@ async def apply_content_scheduled(db: Session, event: dict) -> bool:
 
     conn = db.query(SocialConnection).filter(SocialConnection.account_id == account_id).one_or_none()
     if conn is None:
-        return False  # no LinkedIn connection -- nothing to publish to
+        return False
 
-    job = PublishJob(id=str(uuid.uuid4()), scheduled_post_id=schedule_id, content_id=content_id,
-                      account_id=account_id, status=PublishStatus.PUBLISHING)
-    db.add(job)
-    db.flush()
+    job = db.query(PublishJob).filter(PublishJob.scheduled_post_id == schedule_id).one_or_none()
+    if job is None:
+        job = PublishJob(id=str(uuid.uuid4()), scheduled_post_id=schedule_id, content_id=content_id,
+                          account_id=account_id, status=PublishStatus.PUBLISHING, attempt_count=0)
+        db.add(job)
+    db.commit()  # job row survives even if the LinkedIn calls below fail
 
     async with httpx.AsyncClient() as client:
         content_resp = await client.get(f"{settings.content_service_url}/content/{content_id}/internal",
@@ -67,6 +69,7 @@ async def apply_content_scheduled(db: Session, event: dict) -> bool:
     post_urn = await publish_ugc_post(access_token, conn.linkedin_member_urn, content["body"], asset_urn)
     job.status = PublishStatus.PUBLISHED
     job.linkedin_post_urn = post_urn
+    db.commit()
     return True
 
 
@@ -116,9 +119,21 @@ async def _process_message(message: aio_pika.IncomingMessage, exchange: aio_pika
     try:
         applied, account_id = await _handle_event(event)
         await message.ack()
-    except Exception:
+    except Exception as exc:
         logger.exception("failed to process event %s", event.get("event_id"))
         retry_count = (message.headers or {}).get("x-retry-count", 0)
+        db = SessionLocal()
+        try:
+            job = db.query(PublishJob).filter(PublishJob.scheduled_post_id == event["payload"]["schedule_id"]).one_or_none()
+            if job is not None:
+                job.attempt_count += 1
+                if retry_count >= MAX_RETRIES:
+                    job.status = PublishStatus.FAILED
+                    job.last_error = str(exc)[:1000]
+                db.commit()
+        finally:
+            db.close()
+
         if retry_count < MAX_RETRIES:
             await exchange.publish(
                 Message(body=message.body, delivery_mode=DeliveryMode.PERSISTENT,
@@ -128,6 +143,7 @@ async def _process_message(message: aio_pika.IncomingMessage, exchange: aio_pika
             await message.ack()
         else:
             logger.error("event %s exceeded max retries, routing to DLQ", event.get("event_id"))
+            await publish_event("post.failed", {"account_id": event["payload"]["account_id"], "content_id": event["payload"]["content_id"], "reason": "max retries exceeded"}, account_id=event["payload"]["account_id"])
             await message.reject(requeue=False)
         return
 
