@@ -11,6 +11,10 @@
 # auth-service's own /logout is deliberately NOT here: it depends on
 # `current_user`'s jti server-side (services/auth-service/app/api/auth.py)
 # to know which session to revoke, so it's protected like everything else.
+# social/linkedin/callback is here for the same reason as auth-service's
+# routes above: LinkedIn's redirect is a plain browser navigation with no
+# Authorization header at all. Account context comes from `state`
+# (set to account_id in /social/linkedin/connect), not a JWT.
 PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("POST", "auth/signup"),
     ("POST", "auth/verify-email"),
