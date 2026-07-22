@@ -9,5 +9,5 @@ class Settings(BaseSettings):
     jwt_public_key_path: str = "../../keys/jwt_public.pem"
     jwt_algorithm: str = "RS256"
     upload_dir: str = "/app/uploads"                  # local volume; swap for S3 in AWS bonus
-
+    internal_service_secret: str = ""
 settings = Settings()

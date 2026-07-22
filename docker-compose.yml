@@ -320,6 +320,7 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
       CONTENT_SERVICE_URL: http://content-service:8000
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:
