@@ -1,21 +1,24 @@
 from fastapi import FastAPI, HTTPException, status
-from app.api.content import router as content_router
+from app.api.oauth import router as oauth_router
 import asyncio
 from contextlib import asynccontextmanager
 
 from app.db import engine
-from app.events.ai_consumer import run_consumer
-
+from app.events.publish_consumer import run_consumer
+from app.token_refresh import run_token_refresh_loop
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     consumer_task = asyncio.create_task(run_consumer())
+    token_refresh_task = asyncio.create_task(run_token_refresh_loop())
     yield
     consumer_task.cancel()
-    try:
-        await consumer_task
-    except asyncio.CancelledError:
-        pass
+    token_refresh_task.cancel()
+    for task in (consumer_task, token_refresh_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="CreditFlow Content Service", lifespan=lifespan)
