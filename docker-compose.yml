@@ -328,6 +328,26 @@ services:
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
     networks: [creditflow-net]
+  scheduler-celery-beat:
+    build: ./services/scheduler-service
+    container_name: creditflow-scheduler-celery-beat
+    restart: unless-stopped
+    command: celery -A app.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://creditflow:creditflow@postgres:5432/creditflow
+      DB_SCHEMA: scheduler
+      REDIS_URL: redis://redis:6379/1
+      CELERY_REDIS_URL: redis://redis:6379/2
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
+      CONTENT_SERVICE_URL: http://content-service:8000
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    networks: [creditflow-net]
   social-publishing-service:
     build: ./services/social-publishing-service
     container_name: creditflow-social-publishing-service
