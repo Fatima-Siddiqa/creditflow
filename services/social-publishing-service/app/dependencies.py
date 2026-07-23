@@ -6,6 +6,8 @@ from fastapi import Header, HTTPException, status
 from app.redis_client import redis_client
 from app.security import decode_access_token
 
+def _error(code: str, message: str) -> dict:
+    return {"code": code, "message": message}
 
 def _unauthorized(code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": {"code": code, "message": message, "details": {}}})
@@ -33,17 +35,6 @@ def verify_access_token(auth_header: str | None) -> dict:
 
 def get_current_payload(authorization: str | None = Header(default=None)) -> dict:
     return verify_access_token(authorization)
-
-
-def require_publish_role(payload: dict) -> None:
-    """Trusts the JWT's role claim directly rather than a live cross-
-    service call to user-service — same simplification billing-service
-    uses. Owner AND admin both have publish permission here (unlike
-    billing's owner-only require_owner) — spec: 'draft/approved/
-    published status machine... publishable only by roles with publish
-    permission'; member can edit but not approve/publish-request."""
-    if payload.get("role") not in {"owner", "admin"}:
-        raise _forbidden("insufficient_role", "This action requires the owner or admin role.")
     
 
 def verify_internal_service_secret(x_internal_secret: str | None = Header(default=None, alias="X-Internal-Secret")) -> None:

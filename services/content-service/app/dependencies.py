@@ -5,7 +5,7 @@ from fastapi import Header, HTTPException, status
 
 from app.redis_client import redis_client
 from app.security import decode_access_token
-
+from app.api.content import _error
 
 def _unauthorized(code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": {"code": code, "message": message, "details": {}}})
