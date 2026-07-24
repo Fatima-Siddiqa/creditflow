@@ -43,24 +43,6 @@ def _to_response(db: Session, content: Content) -> ContentResponse:
     )
 
 
-@router.post("/{content_id}/image", response_model=ContentResponse)
-async def upload_content_image(content_id: str, file: UploadFile = File(...), db: Session = Depends(get_db), payload: dict = Depends(get_current_payload)):
-    content = _get_owned_content(db, content_id, payload["account_id"])
-    content_dir = os.path.join(settings.upload_dir, content_id)
-    os.makedirs(content_dir, exist_ok=True)
-    file_path = os.path.join(content_dir, file.filename)
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
-
-    content.image_url = file_path
-    content.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(content)
-
-    await publish_event("content.updated", {"content_id": content_id, "account_id": content.account_id}, account_id=content.account_id)
-    return _to_response(db, content)
-
-
 @router.post("", response_model=ContentResponse, status_code=status.HTTP_201_CREATED)
 async def create_content(body: ContentCreate, db: Session = Depends(get_db), payload: dict = Depends(get_current_payload)):
     account_id, user_id = payload["account_id"], payload["sub"]

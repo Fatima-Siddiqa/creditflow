@@ -36,4 +36,4 @@ async def publish_ugc_post(access_token: str, member_urn: str, text: str, asset_
     async with httpx.AsyncClient() as client:
         resp = await client.post(UGC_POSTS_URL, json=body, headers={"Authorization": f"Bearer {access_token}", "X-Restli-Protocol-Version": "2.0.0"})
         resp.raise_for_status()
-        return resp.headers.get("x-linkedin-id", resp.json().get("id", ""))
+        return resp.headers.get("x-restli-id", resp.json().get("id", ""))

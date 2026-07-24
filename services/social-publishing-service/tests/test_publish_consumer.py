@@ -71,6 +71,7 @@ async def test_image_path_registers_uploads_and_references_asset_urn(db_session)
         content_resp.raise_for_status = lambda: None
         image_resp = AsyncMock()
         image_resp.content = b"fake-image-bytes"
+        image_resp.raise_for_status = lambda: None
 
         MockClient.return_value.__aenter__.return_value.get = AsyncMock(side_effect=[content_resp, image_resp])
 
