@@ -99,7 +99,11 @@ def test_cancel_series_cancels_all_pending_occurrences(client, auth_headers, db_
 
     db_session.refresh(root)
     assert root.status == ScheduleStatus.CANCELLED
-    for row in db_session.query(ScheduledPost).filter(ScheduledPost.id != unrelated.id, ScheduledPost.id != root.id).all():
+    for row in db_session.query(ScheduledPost).filter(
+        ScheduledPost.account_id == root.account_id,
+        ScheduledPost.id != unrelated.id,
+        ScheduledPost.id != root.id,
+    ).all():
         assert row.status == ScheduleStatus.CANCELLED
     db_session.refresh(unrelated)
     assert unrelated.status == ScheduleStatus.PENDING
