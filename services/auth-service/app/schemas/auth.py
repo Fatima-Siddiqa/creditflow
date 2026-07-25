@@ -66,3 +66,12 @@ class ScopedTokenResponse(BaseModel):
     which account is currently active."""
     access_token: str
     token_type: str = "bearer"
+
+class UserEmailResponse(BaseModel):
+    """Internal-only lookup (Phase 13 addition) so other services can
+    resolve a recipient's email from a bare user_id -- most domain events
+    (member.joined, usage.threshold_reached, post.published, etc.) carry
+    user_id/account_id, not email, since auth-service is the only service
+    that owns email addresses."""
+    user_id: uuid.UUID
+    email: str
