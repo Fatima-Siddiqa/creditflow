@@ -5,15 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.db import get_db
-from app.dependencies import get_current_payload, get_live_membership, require_role
+from app.dependencies import get_current_payload, get_live_membership, require_role, verify_internal_service_secret
 from app.internal_auth_client import issue_scoped_token
 from app.models import Account, AccountMember
 from app.events import publish_event
 from app.constants import VALID_ROLES
 from app.schemas import (
     AcceptInviteResponse, AccountResponse, AccountSummary, CreateAccountRequest,
-    MemberResponse, UpdateMemberRoleRequest,
+    MemberResponse, UpdateMemberRoleRequest, AccountOwnerResponse,
 )
 router = APIRouter()
 
@@ -235,3 +234,26 @@ async def remove_member(
         payload={"account_id": str(account_id), "user_id": str(user_id)},
         account_id=account_id,
     )
+
+@router.get(
+    "/accounts/internal/{account_id}/owner",
+    response_model=AccountOwnerResponse,
+    dependencies=[Depends(verify_internal_service_secret)],
+)
+def get_account_owner(account_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Internal, service-to-service only. Added in Phase 13 for
+    notification-service. Returns the first owner found -- individual
+    accounts have exactly one member (always owner); team accounts may
+    have several owners, any one of whom is a reasonable notification
+    recipient for account-level events."""
+    member = (
+        db.query(AccountMember)
+        .filter(AccountMember.account_id == account_id, AccountMember.role == "owner")
+        .first()
+    )
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "owner_not_found", "message": "No owner found for this account.", "details": {}}},
+        )
+    return AccountOwnerResponse(account_id=account_id, user_id=member.user_id, role=member.role)
