@@ -52,3 +52,9 @@ services:
   social-publishing-service:
     ports:
       - "8009:8000"
+  mongodb:
+    ports:
+      - "27018:27017"
+  scraper-service:
+    ports:
+      - "8010:8000"
