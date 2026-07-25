@@ -45,12 +45,14 @@ async def apply_content_scheduled(db: Session, event: dict) -> bool:
         return False
 
     job = db.query(PublishJob).filter(PublishJob.scheduled_post_id == schedule_id).one_or_none()
+    if job is not None and job.status == PublishStatus.PUBLISHED:
+        return True  # already actually published to LinkedIn -- true idempotent no-op
     if job is None:
         job = PublishJob(id=str(uuid.uuid4()), scheduled_post_id=schedule_id, content_id=content_id,
                           account_id=account_id, status=PublishStatus.PUBLISHING, attempt_count=0)
         db.add(job)
-    db.commit()  # job row survives even if the LinkedIn calls below fail
-
+    db.commit()
+    
     async with httpx.AsyncClient() as client:
         content_resp = await client.get(f"{settings.content_service_url}/content/{content_id}/internal",
                                           headers={"X-Internal-Secret": settings.internal_service_secret})
@@ -143,8 +145,10 @@ async def _process_message(message: aio_pika.IncomingMessage, exchange: aio_pika
             db.close()
 
         if retry_count < MAX_RETRIES:
+            retry_event = dict(event)
+            retry_event["event_id"] = str(uuid.uuid4())  # new id -- this is a fresh attempt, not the same delivery
             await exchange.publish(
-                Message(body=message.body, delivery_mode=DeliveryMode.PERSISTENT,
+                Message(body=json.dumps(retry_event).encode(), delivery_mode=DeliveryMode.PERSISTENT,
                         headers={"x-retry-count": retry_count + 1}, content_type="application/json"),
                 routing_key=message.routing_key,
             )
