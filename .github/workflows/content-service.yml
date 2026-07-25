@@ -64,6 +64,8 @@ jobs:
 
       - name: Run tests
         working-directory: services/content-service
+        env:
+          UPLOAD_DIR: ${{ github.workspace }}/services/content-service/test-uploads
         run: pytest tests -v
 
   build:

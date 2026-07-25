@@ -6,7 +6,6 @@ from fastapi import Header, HTTPException, status
 from app.redis_client import redis_client
 from app.security import decode_access_token
 
-
 def _unauthorized(code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": {"code": code, "message": message, "details": {}}})
 
@@ -48,4 +47,4 @@ def require_publish_role(payload: dict) -> None:
 
 def verify_internal_service_secret(x_internal_secret: str | None = Header(default=None, alias="X-Internal-Secret")) -> None:
     if not x_internal_secret or not hmac.compare_digest(x_internal_secret, settings.internal_service_secret):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_error("forbidden", "Internal service secret required."))
+        raise _forbidden("forbidden", "Internal service secret required.")

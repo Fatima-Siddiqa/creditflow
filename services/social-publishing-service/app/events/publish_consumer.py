@@ -45,12 +45,14 @@ async def apply_content_scheduled(db: Session, event: dict) -> bool:
         return False
 
     job = db.query(PublishJob).filter(PublishJob.scheduled_post_id == schedule_id).one_or_none()
+    if job is not None and job.status == PublishStatus.PUBLISHED:
+        return True  # already actually published to LinkedIn -- true idempotent no-op
     if job is None:
         job = PublishJob(id=str(uuid.uuid4()), scheduled_post_id=schedule_id, content_id=content_id,
                           account_id=account_id, status=PublishStatus.PUBLISHING, attempt_count=0)
         db.add(job)
-    db.commit()  # job row survives even if the LinkedIn calls below fail
-
+    db.commit()
+    
     async with httpx.AsyncClient() as client:
         content_resp = await client.get(f"{settings.content_service_url}/content/{content_id}/internal",
                                           headers={"X-Internal-Secret": settings.internal_service_secret})
@@ -60,8 +62,16 @@ async def apply_content_scheduled(db: Session, event: dict) -> bool:
     access_token = decrypt(conn.access_token_enc)
     asset_urn = None
     if content.get("image_url"):
+        # content["image_url"] is a path relative to content-service's
+        # own root (e.g. "/uploads/{content_id}/{filename}"), not a
+        # fully-qualified URL -- httpx.get() on the bare path fails
+        # outright (no scheme/host). Build the real internal URL the
+        # same way the /internal call above already does.
+        image_url = f"{settings.content_service_url}{content['image_url']}"
         async with httpx.AsyncClient() as client:
-            image_bytes = (await client.get(content["image_url"])).content
+            image_resp = await client.get(image_url)
+            image_resp.raise_for_status()
+            image_bytes = image_resp.content
         upload_url, asset_urn = await register_upload(access_token, conn.linkedin_member_urn)
         await upload_binary(upload_url, access_token, image_bytes)
         db.add(PostMedia(id=str(uuid.uuid4()), publish_job_id=job.id, linkedin_asset_urn=asset_urn, image_url=content["image_url"]))
@@ -135,8 +145,10 @@ async def _process_message(message: aio_pika.IncomingMessage, exchange: aio_pika
             db.close()
 
         if retry_count < MAX_RETRIES:
+            retry_event = dict(event)
+            retry_event["event_id"] = str(uuid.uuid4())  # new id -- this is a fresh attempt, not the same delivery
             await exchange.publish(
-                Message(body=message.body, delivery_mode=DeliveryMode.PERSISTENT,
+                Message(body=json.dumps(retry_event).encode(), delivery_mode=DeliveryMode.PERSISTENT,
                         headers={"x-retry-count": retry_count + 1}, content_type="application/json"),
                 routing_key=message.routing_key,
             )
