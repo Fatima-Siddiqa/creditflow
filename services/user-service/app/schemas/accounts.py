@@ -52,3 +52,10 @@ class AccountOwnerResponse(BaseModel):
 class AccountListResponse(BaseModel):
     accounts: list[AccountResponse]
     total: int
+
+class MemberWithEmail(BaseModel):
+    account_id: uuid.UUID
+    user_id: uuid.UUID
+    role: str
+    joined_at: datetime
+    email: str | None
