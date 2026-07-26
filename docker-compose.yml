@@ -376,6 +376,31 @@ services:
       timeout: 5s
       retries: 5
     networks: [creditflow-net]
+  notification-service:
+    build: ./services/notification-service
+    container_name: creditflow-notification-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://creditflow:creditflow@postgres:5432/creditflow
+      DB_SCHEMA: notification
+      REDIS_URL: redis://redis:6379/1
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      EMAIL_PROVIDER_API_KEY: ${RESEND_API_KEY}
+      EMAIL_FROM_ADDRESS: onboarding@resend.dev
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      AUTH_SERVICE_URL: http://auth-service:8000
+      USER_SERVICE_URL: http://user-service:8000
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [creditflow-net]
   scraper-service:
     build: ./services/scraper-service
     container_name: creditflow-scraper-service
