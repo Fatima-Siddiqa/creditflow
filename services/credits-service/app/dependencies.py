@@ -1,9 +1,7 @@
 import jwt
 import hmac
 from app.config import settings
-from fastapi import Query
-
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Query, status
 
 from app.redis_client import redis_client
 from app.security import decode_access_token

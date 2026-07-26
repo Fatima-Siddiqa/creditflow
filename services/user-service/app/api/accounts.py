@@ -12,8 +12,8 @@ from app.models import Account, AccountMember
 from app.events import publish_event
 from app.constants import VALID_ROLES
 from app.schemas import (
-    AcceptInviteResponse, AccountResponse, AccountSummary, CreateAccountRequest,
-    MemberResponse, UpdateMemberRoleRequest, AccountOwnerResponse,
+    AcceptInviteResponse, AccountListResponse, AccountResponse, AccountSummary,
+    CreateAccountRequest, MemberResponse, UpdateMemberRoleRequest, AccountOwnerResponse,
 )
 router = APIRouter()
 
