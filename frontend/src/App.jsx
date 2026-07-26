@@ -7,10 +7,12 @@ import { VerifyEmailPage } from "./pages/public/VerifyEmailPage.jsx";
 import { OnboardingPage } from "./pages/OnboardingPage.jsx";
 import { AppLayout } from "./components/layout/AppLayout.jsx";
 import { AccountHomePage } from "./pages/app/AccountHomePage.jsx";
-import { OwnerDashboardPage } from "./pages/app/OwnerDashboardPage.jsx";
 import { TeamManagementPage } from "./pages/app/TeamManagementPage.jsx";
 import { BillingPage } from "./pages/app/BillingPage.jsx";
 import { CreditsMarketplacePage } from "./pages/app/CreditsMarketplacePage.jsx";
+import { ContentStudioPage } from "./pages/app/ContentStudioPage.jsx";
+import { CalendarPage } from "./pages/app/CalendarPage.jsx";
+import { LinkedInConnectionsPage } from "./pages/app/LinkedInConnectionsPage.jsx";
 import { ProtectedRoute } from "./auth/ProtectedRoute.jsx";
 
 export default function App() {
@@ -30,6 +32,9 @@ export default function App() {
         <Route path="team" element={<ProtectedRoute allowedRoles={["owner"]}><TeamManagementPage /></ProtectedRoute>} />
         <Route path="billing" element={<ProtectedRoute allowedRoles={["owner"]}><BillingPage /></ProtectedRoute>} />
         <Route path="credits" element={<ProtectedRoute allowedRoles={["owner"]}><CreditsMarketplacePage /></ProtectedRoute>} />
+        <Route path="studio" element={<ContentStudioPage />} />
+        <Route path="calendar" element={<CalendarPage />} />
+        <Route path="linkedin" element={<LinkedInConnectionsPage />} />
       </Route>
 
       <Route path="*" element={<HomePage />} />

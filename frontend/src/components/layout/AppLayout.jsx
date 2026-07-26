@@ -19,6 +19,9 @@ export function AppLayout() {
           <Logo size={32} />
           <nav className="flex items-center gap-1">
             <NavLink to="/app/home" className={navLinkClass} end>Dashboard</NavLink>
+            <NavLink to="/app/studio" className={navLinkClass}>Studio</NavLink>
+            <NavLink to="/app/calendar" className={navLinkClass}>Calendar</NavLink>
+            <NavLink to="/app/linkedin" className={navLinkClass}>LinkedIn</NavLink>
             {role === "owner" && <NavLink to="/app/team" className={navLinkClass}>Team</NavLink>}
             {role === "owner" && <NavLink to="/app/billing" className={navLinkClass}>Billing</NavLink>}
             {role === "owner" && <NavLink to="/app/credits" className={navLinkClass}>Credits</NavLink>}
