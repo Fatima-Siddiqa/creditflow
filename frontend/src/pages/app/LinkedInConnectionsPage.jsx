@@ -126,7 +126,7 @@ export function LinkedInConnectionsPage() {
                 <div className="flex items-center gap-2">
                   <StatusBadge status={job.status} />
                   {job.linkedin_post_urn && job.status === "published" && (
-                    
+                    <a
                       href={`https://www.linkedin.com/feed/update/${job.linkedin_post_urn}`}
                       target="_blank"
                       rel="noreferrer"
