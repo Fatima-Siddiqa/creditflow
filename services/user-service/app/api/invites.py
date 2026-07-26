@@ -150,3 +150,25 @@ async def accept_invite(
         account_id=invite.account_id,
         role=invite.role,
     )
+
+@router.get("/accounts/{account_id}/invites", response_model=list[InviteResponse])
+def list_invites(
+    account_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_payload),
+):
+    """Owner/admin only — pending invites shown alongside the roster."""
+    user_id = uuid.UUID(payload["sub"])
+    membership = get_live_membership(db, account_id, user_id)
+    require_role(membership, {"owner", "admin"})
+
+    invites = (
+        db.query(Invite)
+        .filter(Invite.account_id == account_id, Invite.accepted == False)  # noqa: E712
+        .order_by(Invite.expires_at.desc())
+        .all()
+    )
+    return [
+        InviteResponse(id=i.id, account_id=i.account_id, email=i.email, role=i.role, expires_at=i.expires_at, accepted=i.accepted)
+        for i in invites
+    ]

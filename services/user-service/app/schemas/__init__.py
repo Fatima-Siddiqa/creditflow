@@ -1,6 +1,6 @@
 from app.schemas.accounts import (
     AccountResponse, AccountSummary, CreateAccountRequest,
-    MemberResponse, UpdateMemberRoleRequest, AccountOwnerResponse, AccountListResponse,
+    MemberResponse, UpdateMemberRoleRequest, AccountOwnerResponse, AccountListResponse, MemberWithEmail,
 )
 from app.schemas.invites import AcceptInviteResponse, CreateInviteRequest, InviteResponse
 

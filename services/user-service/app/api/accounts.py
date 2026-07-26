@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 import httpx
@@ -7,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import get_current_payload, get_live_membership, require_role, verify_internal_service_secret
-from app.internal_auth_client import issue_scoped_token
+from app.internal_auth_client import issue_scoped_token, get_user_email
 from app.models import Account, AccountMember
 from app.events import publish_event
 from app.constants import VALID_ROLES
 from app.schemas import (
     AcceptInviteResponse, AccountListResponse, AccountResponse, AccountSummary,
-    CreateAccountRequest, MemberResponse, UpdateMemberRoleRequest, AccountOwnerResponse,
+    CreateAccountRequest, MemberResponse, UpdateMemberRoleRequest, AccountOwnerResponse, MemberWithEmail,
 )
 router = APIRouter()
 
@@ -300,3 +301,21 @@ def get_account_internal(account_id: uuid.UUID, db: Session = Depends(get_db)):
             detail={"error": {"code": "account_not_found", "message": "Account does not exist.", "details": {}}},
         )
     return _to_account_response(db, account)
+
+@router.get("/accounts/{account_id}/members", response_model=list[MemberWithEmail])
+async def list_members(
+    account_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_payload),
+):
+    """Powers the Team Management page. Any live member can view the
+    roster — write actions stay gated to owner/admin as before."""
+    user_id = uuid.UUID(payload["sub"])
+    get_live_membership(db, account_id, user_id)  # 403s if caller isn't a member
+
+    members = db.query(AccountMember).filter(AccountMember.account_id == account_id).all()
+    emails = await asyncio.gather(*(get_user_email(m.user_id) for m in members))
+    return [
+        MemberWithEmail(account_id=m.account_id, user_id=m.user_id, role=m.role, joined_at=m.joined_at, email=email)
+        for m, email in zip(members, emails)
+    ]
