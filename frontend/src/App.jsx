@@ -7,6 +7,10 @@ import { VerifyEmailPage } from "./pages/public/VerifyEmailPage.jsx";
 import { OnboardingPage } from "./pages/OnboardingPage.jsx";
 import { AppLayout } from "./components/layout/AppLayout.jsx";
 import { AccountHomePage } from "./pages/app/AccountHomePage.jsx";
+import { OwnerDashboardPage } from "./pages/app/OwnerDashboardPage.jsx";
+import { TeamManagementPage } from "./pages/app/TeamManagementPage.jsx";
+import { BillingPage } from "./pages/app/BillingPage.jsx";
+import { CreditsMarketplacePage } from "./pages/app/CreditsMarketplacePage.jsx";
 import { ProtectedRoute } from "./auth/ProtectedRoute.jsx";
 
 export default function App() {
@@ -18,14 +22,14 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
 
-      <Route
-        path="/app/onboarding"
-        element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>}
-      />
+      <Route path="/app/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
 
       <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route index element={<Navigate to="home" replace />} />
         <Route path="home" element={<AccountHomePage />} />
+        <Route path="team" element={<ProtectedRoute allowedRoles={["owner"]}><TeamManagementPage /></ProtectedRoute>} />
+        <Route path="billing" element={<ProtectedRoute allowedRoles={["owner"]}><BillingPage /></ProtectedRoute>} />
+        <Route path="credits" element={<ProtectedRoute allowedRoles={["owner"]}><CreditsMarketplacePage /></ProtectedRoute>} />
       </Route>
 
       <Route path="*" element={<HomePage />} />
