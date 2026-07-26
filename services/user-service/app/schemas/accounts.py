@@ -48,3 +48,7 @@ class AccountOwnerResponse(BaseModel):
     account_id: uuid.UUID
     user_id: uuid.UUID
     role: str
+
+class AccountListResponse(BaseModel):
+    accounts: list[AccountResponse]
+    total: int

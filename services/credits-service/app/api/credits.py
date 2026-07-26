@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.dependencies import get_current_payload
+from app.dependencies import get_current_payload, resolve_target_account_id
 from app.models.ledger import CreditLedger, MarketplaceListing, TransactionType
 from app.schemas.credits import BalanceResponse, LedgerEntry, MarketplaceCreate, MarketplaceResponse
 
@@ -17,8 +17,7 @@ def _error(code: str, message: str) -> dict:
 
 
 @router.get("/balance", response_model=BalanceResponse)
-def get_balance(db: Session = Depends(get_db), payload: dict = Depends(get_current_payload)):
-    account_id = payload["account_id"]
+def get_balance(db: Session = Depends(get_db), account_id: str = Depends(resolve_target_account_id)):
     balance = db.query(func.sum(CreditLedger.amount)).filter(CreditLedger.account_id == account_id).scalar() or 0
     return {"account_id": account_id, "balance": balance}
 

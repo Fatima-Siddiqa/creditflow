@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     stripe_secret_key: str = "sk_test_dev_placeholder"
     stripe_price_id_pro: str = "price_dev_pro_placeholder"
     stripe_price_id_team: str = "price_dev_team_placeholder"
+    internal_service_secret: str = "dev-only-internal-secret-change-me"
 
     dunning_grace_period_days: int = 7
     dunning_check_interval_seconds: int = 60

@@ -194,6 +194,7 @@ services:
       REDIS_URL: redis://redis:6379/1
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:
