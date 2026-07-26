@@ -1,10 +1,12 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { HomePage } from "./pages/public/HomePage.jsx";
 import { SignupPage } from "./pages/public/SignupPage.jsx";
 import { LoginPage } from "./pages/public/LoginPage.jsx";
 import { ForgotPasswordPage } from "./pages/public/ForgotPasswordPage.jsx";
 import { VerifyEmailPage } from "./pages/public/VerifyEmailPage.jsx";
-import { OnboardingStub } from "./pages/OnboardingStub.jsx";
+import { OnboardingPage } from "./pages/OnboardingPage.jsx";
+import { AppLayout } from "./components/layout/AppLayout.jsx";
+import { AccountHomePage } from "./pages/app/AccountHomePage.jsx";
 import { ProtectedRoute } from "./auth/ProtectedRoute.jsx";
 
 export default function App() {
@@ -15,17 +17,17 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
-      {/* Onboarding proper (create/join account, account switcher) lands
-          in the next branch -- this stub just proves the login -> landing
-          redirect and route guard work end-to-end already. */}
+
       <Route
-        path="/app"
-        element={
-          <ProtectedRoute>
-            <OnboardingStub />
-          </ProtectedRoute>
-        }
+        path="/app/onboarding"
+        element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>}
       />
+
+      <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+        <Route index element={<Navigate to="home" replace />} />
+        <Route path="home" element={<AccountHomePage />} />
+      </Route>
+
       <Route path="*" element={<HomePage />} />
     </Routes>
   );
