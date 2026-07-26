@@ -58,3 +58,6 @@ services:
   scraper-service:
     ports:
       - "8010:8000"
+  notification-service:
+    ports:
+      - "8011:8000"
