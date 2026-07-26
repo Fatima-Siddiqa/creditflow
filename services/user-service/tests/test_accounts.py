@@ -193,3 +193,61 @@ def test_switch_account_surfaces_auth_service_failure_as_502(client, make_token,
 
     assert resp.status_code == 502
     assert resp.json()["detail"]["error"]["code"] == "auth_service_unavailable"
+
+def test_list_members_returns_roster_with_emails(client, make_token, test_redis_client, db_session, monkeypatch):
+    owner_id = uuid.uuid4()
+    member_id = uuid.uuid4()
+    account = _seed_membership(db_session, owner_id, role="owner")
+    db_session.add(AccountMember(account_id=account.id, user_id=member_id, role="member"))
+    db_session.commit()
+
+    async def _fake_get_user_email(user_id):
+        return f"{user_id}@example.com"
+
+    monkeypatch.setattr("app.api.accounts.get_user_email", _fake_get_user_email)
+
+    token = make_token(jti="m1", sub=str(owner_id))
+    test_redis_client.setex("jti:m1", 900, "1")
+
+    resp = client.get(f"/accounts/{account.id}/members", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 2
+    by_user = {row["user_id"]: row for row in body}
+    assert by_user[str(owner_id)]["role"] == "owner"
+    assert by_user[str(owner_id)]["email"] == f"{owner_id}@example.com"
+    assert by_user[str(member_id)]["role"] == "member"
+
+
+def test_list_members_rejects_non_member(client, make_token, test_redis_client, db_session):
+    owner_id = uuid.uuid4()
+    account = _seed_membership(db_session, owner_id, role="owner")
+
+    stranger_token = make_token(jti="m2", sub=str(uuid.uuid4()))
+    test_redis_client.setex("jti:m2", 900, "1")
+
+    resp = client.get(f"/accounts/{account.id}/members", headers={"Authorization": f"Bearer {stranger_token}"})
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error"]["code"] == "not_a_member"
+
+
+def test_list_members_tolerates_email_lookup_failure(client, make_token, test_redis_client, db_session, monkeypatch):
+    """A 404 from auth-service (get_user_email -> None) shouldn't break
+    the whole roster — just that member's email comes back null."""
+    owner_id = uuid.uuid4()
+    account = _seed_membership(db_session, owner_id, role="owner")
+
+    async def _fake_get_user_email(user_id):
+        return None
+
+    monkeypatch.setattr("app.api.accounts.get_user_email", _fake_get_user_email)
+
+    token = make_token(jti="m3", sub=str(owner_id))
+    test_redis_client.setex("jti:m3", 900, "1")
+
+    resp = client.get(f"/accounts/{account.id}/members", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+    assert resp.json()[0]["email"] is None

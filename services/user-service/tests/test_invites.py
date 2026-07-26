@@ -203,3 +203,53 @@ def test_accept_invite_rejects_unknown_token(client, make_token, test_redis_clie
 
     assert resp.status_code == 404
     assert resp.json()["detail"]["error"]["code"] == "invalid_invite"
+
+# ---- list_invites ----
+
+def test_list_invites_returns_pending_only(client, make_token, test_redis_client, db_session):
+    owner_id = uuid.uuid4()
+    account = _seed_account_with_owner(db_session, owner_id)
+    _seed_invite(db_session, account.id, email="pending@example.com")
+    accepted_invite, _ = _seed_invite(db_session, account.id, email="already-joined@example.com")
+    accepted_invite.accepted = True
+    db_session.commit()
+
+    token = make_token(jti="i11", sub=str(owner_id))
+    test_redis_client.setex("jti:i11", 900, "1")
+
+    resp = client.get(f"/accounts/{account.id}/invites", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["email"] == "pending@example.com"
+    assert body[0]["accepted"] is False
+
+
+def test_list_invites_requires_owner_or_admin(client, make_token, test_redis_client, db_session):
+    owner_id = uuid.uuid4()
+    account = _seed_account_with_owner(db_session, owner_id)
+    member_id = uuid.uuid4()
+    db_session.add(AccountMember(account_id=account.id, user_id=member_id, role="member"))
+    db_session.commit()
+
+    token = make_token(jti="i12", sub=str(member_id))
+    test_redis_client.setex("jti:i12", 900, "1")
+
+    resp = client.get(f"/accounts/{account.id}/invites", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error"]["code"] == "insufficient_role"
+
+
+def test_list_invites_rejects_non_member(client, make_token, test_redis_client, db_session):
+    owner_id = uuid.uuid4()
+    account = _seed_account_with_owner(db_session, owner_id)
+
+    stranger_token = make_token(jti="i13", sub=str(uuid.uuid4()))
+    test_redis_client.setex("jti:i13", 900, "1")
+
+    resp = client.get(f"/accounts/{account.id}/invites", headers={"Authorization": f"Bearer {stranger_token}"})
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error"]["code"] == "not_a_member"

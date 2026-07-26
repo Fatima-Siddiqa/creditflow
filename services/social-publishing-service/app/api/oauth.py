@@ -2,7 +2,6 @@ import uuid, httpx
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from starlette.responses import RedirectResponse
 
 from app.config import settings
 from app.crypto import encrypt
@@ -18,8 +17,15 @@ LINKEDIN_USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 
 @router.get("/linkedin/connect")
 def connect(payload: dict = Depends(get_current_payload)):
+    """Returns the LinkedIn authorize URL as JSON instead of issuing a
+    server-side redirect. The Gateway's generic proxy only reads the JWT
+    from the Authorization header (no query-token fallback, unlike
+    api-gateway's SSE route) -- a plain browser navigation to this route
+    can't carry that header, so the frontend must call this via an
+    authenticated fetch() and navigate the browser itself with the URL
+    it gets back."""
     params = f"response_type=code&client_id={settings.linkedin_client_id}&redirect_uri={settings.linkedin_redirect_uri}&scope=openid%20profile%20email%20w_member_social&state={payload['account_id']}"
-    return RedirectResponse(f"{LINKEDIN_AUTH_URL}?{params}")
+    return {"authorize_url": f"{LINKEDIN_AUTH_URL}?{params}"}
 
 
 @router.get("/linkedin/callback")
