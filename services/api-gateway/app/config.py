@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     # completions API is synchronous). Built anyway because spec §8
     # Service 1 lists all three endpoints with no hedge. See
     # docs/EVENT_CONTRACTS.md's "Webhook relay events" section.
+    # ---- Frontend / cookies (Phase 15 prerequisite) ----
+    frontend_origin: str = "http://localhost:5173"
+    cookie_secure: bool = False  # True in any real deployment (HTTPS) — see .env.example
+    # Duplicated from auth-service's own refresh_token_ttl_days on purpose:
+    # this is the cookie's Max-Age, auth-service's is the DB row's actual
+    # expiry. Keep both in sync manually if you ever change the TTL.
+    refresh_token_ttl_days: int = 7
 
 
 settings = Settings()
