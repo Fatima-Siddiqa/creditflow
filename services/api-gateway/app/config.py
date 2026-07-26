@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     # ---- Frontend / cookies (Phase 15 prerequisite) ----
     frontend_origin: str = "http://localhost:5173"
     cookie_secure: bool = False  # True in any real deployment (HTTPS) — see .env.example
+    cookie_samesite: str = "lax"  # override to "none" for cross-origin ngrok demos (requires cookie_secure=true too)
     # Duplicated from auth-service's own refresh_token_ttl_days on purpose:
     # this is the cookie's Max-Age, auth-service's is the DB row's actual
     # expiry. Keep both in sync manually if you ever change the TTL.

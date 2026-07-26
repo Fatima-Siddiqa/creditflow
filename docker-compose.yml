@@ -172,6 +172,7 @@ services:
       OPENROUTER_WEBHOOK_SECRET: ${OPENROUTER_WEBHOOK_SECRET}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
       COOKIE_SECURE: ${COOKIE_SECURE}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE}
     volumes:
       - ./keys:/app/keys:ro
     depends_on:

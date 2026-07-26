@@ -135,7 +135,7 @@ async def proxy(path: str, request: Request):
             value=refresh_token,
             httponly=True,
             secure=settings.cookie_secure,
-            samesite="lax",
+            samesite=settings.cookie_samesite,
             path=COOKIE_PATH,
             max_age=settings.refresh_token_ttl_days * 86400,
         )
