@@ -1,7 +1,8 @@
+import uuid
 import secrets
 
 from app.models import PasswordResetToken
-from app.schemas import ForgotPasswordRequest, ResetPasswordRequest, IssueScopedTokenRequest, ScopedTokenResponse
+from app.schemas import ForgotPasswordRequest, ResetPasswordRequest, IssueScopedTokenRequest, ScopedTokenResponse, UserEmailResponse
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -246,3 +247,17 @@ def issue_scoped_token(body: IssueScopedTokenRequest, db: Session = Depends(get_
     redis_client.setex(f"jti:{jti}", settings.access_token_ttl_minutes * 60, "1")
 
     return ScopedTokenResponse(access_token=access_token)
+
+@router.get(
+    "/internal/users/{user_id}",
+    response_model=UserEmailResponse,
+    dependencies=[Depends(verify_internal_service_secret)],
+)
+def get_user_email(user_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Internal, service-to-service only. Added in Phase 13 so
+    notification-service can resolve an email address from a bare
+    user_id -- most domain events carry user_id/account_id, not email."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise _error("user_not_found", "User does not exist.", status.HTTP_404_NOT_FOUND)
+    return UserEmailResponse(user_id=user.id, email=user.email)

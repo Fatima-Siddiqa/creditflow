@@ -1,7 +1,10 @@
+import hmac
+
 import jwt
 from fastapi import Header, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import AccountMember
 from app.redis_client import redis_client
 from app.security import decode_access_token
@@ -81,3 +84,12 @@ def require_role(membership: AccountMember, allowed_roles: set[str]) -> None:
             "insufficient_role",
             f"This action requires one of: {', '.join(sorted(allowed_roles))}.",
         )
+
+def verify_internal_service_secret(
+    x_internal_secret: str | None = Header(default=None, alias="X-Internal-Secret"),
+) -> None:
+    """Gates GET /accounts/internal/{account_id}/owner (Phase 13). Only a
+    service that knows this shared secret should call it -- no JWT is
+    involved since the caller isn't a logged-in user."""
+    if not x_internal_secret or not hmac.compare_digest(x_internal_secret, settings.internal_service_secret):
+        raise _unauthorized("invalid_internal_secret", "Missing or incorrect internal service secret.")

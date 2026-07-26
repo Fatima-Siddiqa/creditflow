@@ -40,3 +40,11 @@ class MemberResponse(BaseModel):
     user_id: uuid.UUID
     role: str
     joined_at: datetime
+
+class AccountOwnerResponse(BaseModel):
+    """Internal-only (Phase 13) -- lets notification-service resolve which
+    user to email for account-only events (invoice.paid, payment.failed,
+    usage.threshold_reached, post.published, post.failed)."""
+    account_id: uuid.UUID
+    user_id: uuid.UUID
+    role: str
