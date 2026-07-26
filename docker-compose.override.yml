@@ -61,3 +61,6 @@ services:
   notification-service:
     ports:
       - "8011:8000"
+  admin-service:
+    ports:
+      - "8012:8000"
