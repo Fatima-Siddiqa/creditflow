@@ -402,6 +402,33 @@ services:
       timeout: 5s
       retries: 5
     networks: [creditflow-net]
+  admin-service:
+    build: ./services/admin-service
+    container_name: creditflow-admin-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://creditflow:creditflow@postgres:5432/creditflow
+      DB_SCHEMA: admin
+      REDIS_URL: redis://redis:6379/1
+      AUTH_JTI_REDIS_URL: redis://redis:6379/1
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      JWT_PUBLIC_KEY_PATH: /app/keys/jwt_public.pem
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      USER_SERVICE_URL: http://user-service:8000
+      CREDITS_SERVICE_URL: http://credits-service:8000
+      USAGE_SERVICE_URL: http://usage-service:8000
+    volumes:
+      - ./keys:/app/keys:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [creditflow-net]
   scraper-service:
     build: ./services/scraper-service
     container_name: creditflow-scraper-service
