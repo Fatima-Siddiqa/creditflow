@@ -1,12 +1,19 @@
 from fastapi import FastAPI, HTTPException, status
-
+from fastapi.middleware.cors import CORSMiddleware
+from app.config import settings
 from app.api.proxy import router as proxy_router
 from app.api.sse import router as sse_router
 from app.api.webhooks import router as webhooks_router
 from app.redis_client import redis_client
 
 app = FastAPI(title="CreditFlow API Gateway")
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # Order matters: sse_router's /api/ai/stream/{job_id} must be registered
 # BEFORE proxy_router's /api/{path:path} catch-all, or the wildcard would
 # match first and this route would never be reached.

@@ -6,7 +6,11 @@ from app.account_scope_exempt_routes import is_account_scope_exempt
 from app.dependencies import verify_access_token
 from app.public_routes import is_public_route
 from app.routing import resolve_service_base_url
-
+from app.refresh_cookie import (
+    REFRESH_COOKIE_NAME, COOKIE_PATH, SET_COOKIE_ROUTES, CLEAR_COOKIE_ROUTES,
+    inject_refresh_token_from_cookie, extract_and_strip_refresh_token,
+)
+from app.config import settings
 router = APIRouter()
 
 # Headers that must never be blindly forwarded in either direction — they
@@ -78,6 +82,7 @@ async def proxy(path: str, request: Request):
         enforce_account_rate_limit(payload["account_id"])
         
     body = await request.body()
+    body = inject_refresh_token_from_cookie(path, body, request.cookies.get(REFRESH_COOKIE_NAME))
     forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS}
 
     try:
@@ -113,9 +118,27 @@ async def proxy(path: str, request: Request):
     response_headers = {
         k: v for k, v in downstream_resp.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS
     }
-    return Response(
-        content=downstream_resp.content,
+    content = downstream_resp.content
+    refresh_token = None
+    if path in SET_COOKIE_ROUTES:
+        content, refresh_token = extract_and_strip_refresh_token(path, content)
+
+    resp = Response(
+        content=content,
         status_code=downstream_resp.status_code,
         headers=response_headers,
         media_type=downstream_resp.headers.get("content-type"),
     )
+    if refresh_token and downstream_resp.status_code < 400:
+        resp.set_cookie(
+            key=REFRESH_COOKIE_NAME,
+            value=refresh_token,
+            httponly=True,
+            secure=settings.cookie_secure,
+            samesite=settings.cookie_samesite,
+            path=COOKIE_PATH,
+            max_age=settings.refresh_token_ttl_days * 86400,
+        )
+    if path in CLEAR_COOKIE_ROUTES and downstream_resp.status_code < 400:
+        resp.delete_cookie(key=REFRESH_COOKIE_NAME, path=COOKIE_PATH)
+    return resp
