@@ -61,6 +61,7 @@ async def proxy(path: str, request: Request):
         # this guard will need an admin-role exemption too at that point.
         if (
             prefix != "auth"
+            and prefix != "admin"
             and not is_account_scope_exempt(request.method, path)
             and payload["account_id"] is None
         ):
