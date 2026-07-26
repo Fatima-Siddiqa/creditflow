@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, status
 from app.api.oauth import router as oauth_router
+from app.api.publish_jobs import router as publish_jobs_router
 import asyncio
 from contextlib import asynccontextmanager
 
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="CreditFlow Content Service", lifespan=lifespan)
 
 app.include_router(oauth_router, prefix="/social", tags=["Social"])
+app.include_router(publish_jobs_router, prefix="/social", tags=["Social"])
 
 @app.get("/healthz")
 def healthz():
