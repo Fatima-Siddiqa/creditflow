@@ -30,7 +30,7 @@ def _generate_otp() -> str:
     return "".join(secrets.choice("0123456789") for _ in range(6))
 
 def _issue_token_pair(db: Session, user: User, rotated_from_id=None) -> TokenPairResponse:
-    access_token, jti = create_access_token(user_id=user.id, account_id=None, role=None)
+    access_token, jti = create_access_token(user_id=user.id, account_id=None, role=None, platform_role=user.platform_role)
     redis_client.setex(f"jti:{jti}", settings.access_token_ttl_minutes * 60, "1")
 
     raw_refresh = generate_raw_token()
@@ -243,7 +243,7 @@ def issue_scoped_token(body: IssueScopedTokenRequest, db: Session = Depends(get_
     if not user.is_verified:
         raise _error("email_not_verified", "User's email is not verified.", status.HTTP_403_FORBIDDEN)
 
-    access_token, jti = create_access_token(user_id=user.id, account_id=body.account_id, role=body.role)
+    access_token, jti = create_access_token(user_id=user.id, account_id=body.account_id, role=body.role, platform_role=user.platform_role)
     redis_client.setex(f"jti:{jti}", settings.access_token_ttl_minutes * 60, "1")
 
     return ScopedTokenResponse(access_token=access_token)
