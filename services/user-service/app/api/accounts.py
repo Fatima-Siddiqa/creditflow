@@ -258,3 +258,45 @@ def get_account_owner(account_id: uuid.UUID, db: Session = Depends(get_db)):
             detail={"error": {"code": "owner_not_found", "message": "No owner found for this account.", "details": {}}},
         )
     return AccountOwnerResponse(account_id=account_id, user_id=member.user_id, role=member.role)
+
+@router.get(
+    "/accounts/internal",
+    response_model=AccountListResponse,
+    dependencies=[Depends(verify_internal_service_secret)],
+)
+def list_all_accounts(
+    search: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    """Internal only — backs admin-service's SuperAdmin cross-account
+    directory (spec §8 Service 13: 'Cross-account directory — search/
+    browse all accounts on the platform'). Search matches account name
+    case-insensitively; UUID search falls back to exact id match."""
+    query = db.query(Account)
+    if search:
+        try:
+            query = query.filter(Account.id == uuid.UUID(search))
+        except ValueError:
+            query = query.filter(Account.name.ilike(f"%{search}%"))
+    total = query.count()
+    rows = query.order_by(Account.created_at.desc()).offset(offset).limit(limit).all()
+    return AccountListResponse(accounts=[_to_account_response(db, a) for a in rows], total=total)
+
+
+@router.get(
+    "/accounts/internal/{account_id}",
+    response_model=AccountResponse,
+    dependencies=[Depends(verify_internal_service_secret)],
+)
+def get_account_internal(account_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Internal only — unlike GET /accounts/{account_id}, does not require
+    caller membership. Backs admin-service's account overview aggregation."""
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "account_not_found", "message": "Account does not exist.", "details": {}}},
+        )
+    return _to_account_response(db, account)
