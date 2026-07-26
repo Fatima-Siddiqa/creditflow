@@ -46,7 +46,7 @@ def _load_public_key() -> str:
         return f.read()
 
 
-def create_access_token(user_id: uuid.UUID, account_id: uuid.UUID | None, role: str | None) -> tuple[str, str]:
+def create_access_token(user_id: uuid.UUID, account_id: uuid.UUID | None, role: str | None, platform_role: str | None = None) -> tuple[str, str]:
     """Returns (token, jti). Caller is responsible for storing jti in Redis."""
     jti = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
@@ -54,6 +54,7 @@ def create_access_token(user_id: uuid.UUID, account_id: uuid.UUID | None, role: 
         "sub": str(user_id),
         "account_id": str(account_id) if account_id else None,
         "role": role,
+        "platform_role": platform_role,
         "jti": jti,
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_ttl_minutes),
