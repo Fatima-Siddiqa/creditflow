@@ -4,8 +4,24 @@ import { Card } from "../../components/Card.jsx";
 import { Button } from "../../components/Button.jsx";
 import { ConfirmModal } from "../../components/ConfirmModal.jsx";
 
+const STATUS_STYLES = {
+  pending: "bg-gray-100 text-gray-600",
+  publishing: "bg-sky-100 text-sky-700",
+  published: "bg-accent-100 text-accent-700",
+  failed: "bg-red-100 text-red-600",
+};
+
+function StatusBadge({ status }) {
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[status] ?? "bg-gray-100 text-gray-600"}`}>
+      {status}
+    </span>
+  );
+}
+
 export function LinkedInConnectionsPage() {
   const [status, setStatus] = useState(null);
+  const [jobs, setJobs] = useState([]);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
@@ -13,10 +29,14 @@ export function LinkedInConnectionsPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await api.get("social/linkedin/status");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error?.message || "Could not load LinkedIn status.");
-      setStatus(data);
+      const [statusRes, jobsRes] = await Promise.all([
+        api.get("social/linkedin/status"),
+        api.get("social/publish-jobs"),
+      ]);
+      const [statusData, jobsData] = await Promise.all([statusRes.json(), jobsRes.json()]);
+      if (!statusRes.ok) throw new Error(statusData?.error?.message || "Could not load LinkedIn status.");
+      setStatus(statusData);
+      setJobs(jobsRes.ok ? jobsData : []); // publish history is a nice-to-have -- don't block the page on it
     } catch (err) {
       setError(err.message);
     }
@@ -80,6 +100,44 @@ export function LinkedInConnectionsPage() {
           <div className="space-y-3">
             <p className="text-sm text-gray-500">No LinkedIn account connected yet. Connect one to publish scheduled posts.</p>
             <Button disabled={busy} onClick={connect}>Connect LinkedIn</Button>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-900">Recent publish activity</h2>
+          <Button variant="outline" onClick={load}>Refresh</Button>
+        </div>
+        {jobs.length === 0 ? (
+          <p className="text-sm text-gray-400">Nothing published yet -- schedule an approved post to see it here.</p>
+        ) : (
+          <div className="space-y-2">
+            {jobs.map((job) => (
+              <div key={job.id} className="flex items-center justify-between border-b border-gray-100 py-2 last:border-0 text-sm">
+                <div>
+                  <p className="text-gray-700">Content {job.content_id.slice(0, 8)}…</p>
+                  <p className="text-xs text-gray-400">
+                    {new Date(job.created_at).toLocaleString()}
+                    {job.attempt_count > 1 && ` · ${job.attempt_count} attempts`}
+                    {job.status === "failed" && job.last_error && ` · ${job.last_error}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={job.status} />
+                  {job.linkedin_post_urn && job.status === "published" && (
+                    
+                      href={`https://www.linkedin.com/feed/update/${job.linkedin_post_urn}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-brand-600 hover:underline"
+                    >
+                      View
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </Card>
