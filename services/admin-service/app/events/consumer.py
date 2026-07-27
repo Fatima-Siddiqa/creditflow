@@ -4,13 +4,15 @@ import logging
 import uuid
 
 import aio_pika
-from aio_pika import ExchangeType
+from aio_pika import DeliveryMode, ExchangeType, Message
 from sqlalchemy import text
 
 from app.config import settings
 from app.db import SessionLocal
 
 logger = logging.getLogger("admin_consumer")
+
+MAX_RETRIES = 3
 
 # Every exchange in the platform (Phase 1 topology) — the one deliberate
 # wildcard "#" subscriber, per PHASE_14 and spec §8 Service 13.
@@ -21,7 +23,11 @@ EXCHANGES = [
 ]
 
 
-def _write_audit_row(event: dict) -> bool:
+def _write_audit_row(event: dict) -> None:
+    """Synchronous by nature (SQLAlchemy) -- always call this via
+    asyncio.to_thread from the consumer loop, never directly, since this
+    service gathers 10 exchange bindings on one event loop and a blocking
+    call here would stall all of them at once."""
     db = SessionLocal()
     try:
         inserted = db.execute(
@@ -32,7 +38,7 @@ def _write_audit_row(event: dict) -> bool:
             {"eid": event.get("event_id")},
         ).fetchone()
         if inserted is None:
-            return False
+            return  # already processed -- ack without re-inserting
         db.execute(
             text(
                 "INSERT INTO admin.audit_log (event_id, event_type, account_id, payload, occurred_at) "
@@ -47,7 +53,6 @@ def _write_audit_row(event: dict) -> bool:
             },
         )
         db.commit()
-        return True
     finally:
         db.close()
 
@@ -55,7 +60,7 @@ def _write_audit_row(event: dict) -> bool:
 async def _bind_exchange(channel: aio_pika.Channel, exchange_name: str) -> None:
     exchange = await channel.declare_exchange(exchange_name, ExchangeType.TOPIC, durable=True)
     queue_name = f"admin-service.{exchange_name}.all"
-    dlx = await channel.declare_exchange(f"{queue_name}.dlx", aio_pika.ExchangeType.FANOUT, durable=True)
+    dlx = await channel.declare_exchange(f"{queue_name}.dlx", ExchangeType.FANOUT, durable=True)
     dlq = await channel.declare_queue(f"{queue_name}.dlq", durable=True)
     await dlq.bind(dlx)
     queue = await channel.declare_queue(queue_name, durable=True, arguments={"x-dead-letter-exchange": f"{queue_name}.dlx"})
@@ -65,11 +70,26 @@ async def _bind_exchange(channel: aio_pika.Channel, exchange_name: str) -> None:
         async for message in it:
             event = json.loads(message.body)
             try:
-                _write_audit_row(event)
+                await asyncio.to_thread(_write_audit_row, event)
                 await message.ack()
             except Exception:
                 logger.exception("failed to audit event %s", event.get("event_id"))
-                await message.reject(requeue=False)
+                retry_count = (message.headers or {}).get("x-retry-count", 0)
+                if retry_count < MAX_RETRIES:
+                    retry_event = dict(event)
+                    retry_event["event_id"] = str(uuid.uuid4())  # fresh id -- original was never marked processed
+                    await exchange.publish(
+                        Message(
+                            body=json.dumps(retry_event).encode(),
+                            delivery_mode=DeliveryMode.PERSISTENT,
+                            headers={"x-retry-count": retry_count + 1},
+                            content_type="application/json",
+                        ),
+                        routing_key=message.routing_key,
+                    )
+                    await message.ack()
+                else:
+                    await message.reject(requeue=False)
 
 
 async def run_consumer() -> None:
