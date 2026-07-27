@@ -23,11 +23,13 @@ EXCHANGES = [
 ]
 
 
-def _write_audit_row(event: dict) -> None:
+def _write_audit_row(event: dict) -> bool:
     """Synchronous by nature (SQLAlchemy) -- always call this via
     asyncio.to_thread from the consumer loop, never directly, since this
     service gathers 10 exchange bindings on one event loop and a blocking
-    call here would stall all of them at once."""
+    call here would stall all of them at once. Returns True/False so
+    tests/test_audit_consumer.py can keep asserting on it directly,
+    bypassing the RabbitMQ layer entirely."""
     db = SessionLocal()
     try:
         inserted = db.execute(
@@ -38,7 +40,7 @@ def _write_audit_row(event: dict) -> None:
             {"eid": event.get("event_id")},
         ).fetchone()
         if inserted is None:
-            return  # already processed -- ack without re-inserting
+            return False  # already processed -- caller still acks either way
         db.execute(
             text(
                 "INSERT INTO admin.audit_log (event_id, event_type, account_id, payload, occurred_at) "
@@ -53,6 +55,7 @@ def _write_audit_row(event: dict) -> None:
             },
         )
         db.commit()
+        return True
     finally:
         db.close()
 
