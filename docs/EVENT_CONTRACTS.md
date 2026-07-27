@@ -181,19 +181,7 @@ there's no logic change needed, just a stale comment to clean up.
 Every consuming service owns a `processed_events(event_id UUID PRIMARY KEY,
 processed_at TIMESTAMPTZ)` table in its own schema. The check-and-insert
 happens in the *same transaction* as the business-logic write it guards —
-see `services/user-service/app/events/identity_consumer.py`'s
-`create_account_for_registered_user` for the reference implementation
-every later consumer (billing, credits, usage, content, scheduler...)
-should copy:
-
-\`\`\`python
-inserted = db.execute(
-    text("INSERT INTO <schema>.processed_events (event_id) VALUES (:id) "
-         "ON CONFLICT DO NOTHING RETURNING event_id"),
-    {"id": event_id},
-).fetchone()
-if inserted is None:
-    return  # already handled
+see `services/user-service/app/events/identity_consumer.py`'s `create_account_for_registered_user` for the reference implementation every later consumer (billing, credits, usage, content, social-publishing, scraper, notification, admin...) should copy. (scheduler-service is not + a RabbitMQ consumer -- it validates content_id synchronously via REST + against content-service instead; see ARCHITECTURE.md.)
 # ... business logic, same transaction ...
 \`\`\`
 
