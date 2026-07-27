@@ -15,7 +15,10 @@ function toLocalInputValue(iso) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-function dateKey(d) { return d.toISOString().slice(0, 10); }
+function dateKey(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 const STATUS_STYLES = {
   pending: "bg-sky-100 text-sky-700",
@@ -173,6 +176,7 @@ export function CalendarPage() {
                   {(eventsByDay[key] ?? []).map((ev) => (
                     <button
                       key={ev.id}
+                      data-testid={`scheduled-${ev.id}`}
                       onClick={() => openEvent(ev)}
                       className={`block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] ${STATUS_STYLES[ev.status] ?? "bg-gray-100"}`}
                     >
