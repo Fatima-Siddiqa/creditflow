@@ -3,12 +3,13 @@ import { useAuth } from "../../auth/AuthContext.jsx";
 import { Logo } from "../Logo.jsx";
 import { AccountSwitcher } from "../AccountSwitcher.jsx";
 import { Button } from "../Button.jsx";
+import { useAuth } from "../../auth/AuthContext.jsx";
 
 const navLinkClass = ({ isActive }) =>
   `rounded-lg px-3 py-1.5 text-sm font-medium ${isActive ? "bg-brand-50 text-brand-700" : "text-gray-500 hover:text-gray-800"}`;
 
 export function AppLayout() {
-  const { accountId, role, logout } = useAuth();
+  const { accountId, role, platformRole, logout } = useAuth();
 
   if (!accountId) return <Navigate to="/app/onboarding" replace />;
 
@@ -25,6 +26,7 @@ export function AppLayout() {
             {role === "owner" && <NavLink to="/app/team" className={navLinkClass}>Team</NavLink>}
             {role === "owner" && <NavLink to="/app/billing" className={navLinkClass}>Billing</NavLink>}
             {role === "owner" && <NavLink to="/app/credits" className={navLinkClass}>Credits</NavLink>}
+            {platformRole === "superadmin" && <NavLink to="/app/admin" className={navLinkClass}>Admin</NavLink>}
           </nav>
         </div>
         <div className="flex items-center gap-3">

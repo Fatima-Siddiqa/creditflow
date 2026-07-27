@@ -14,6 +14,7 @@ import { ContentStudioPage } from "./pages/app/ContentStudioPage.jsx";
 import { CalendarPage } from "./pages/app/CalendarPage.jsx";
 import { LinkedInConnectionsPage } from "./pages/app/LinkedInConnectionsPage.jsx";
 import { ProtectedRoute } from "./auth/ProtectedRoute.jsx";
+import { AdminConsolePage } from "./pages/app/AdminConsolePage.jsx";
 
 export default function App() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="studio" element={<ContentStudioPage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="linkedin" element={<LinkedInConnectionsPage />} />
+        <Route path="admin" element={<ProtectedRoute allowedRoles={["superadmin"]}><AdminConsolePage /></ProtectedRoute>} />
       </Route>
 
       <Route path="*" element={<HomePage />} />
