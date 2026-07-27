@@ -3,7 +3,6 @@ import { useAuth } from "../../auth/AuthContext.jsx";
 import { Logo } from "../Logo.jsx";
 import { AccountSwitcher } from "../AccountSwitcher.jsx";
 import { Button } from "../Button.jsx";
-import { useAuth } from "../../auth/AuthContext.jsx";
 
 const navLinkClass = ({ isActive }) =>
   `rounded-lg px-3 py-1.5 text-sm font-medium ${isActive ? "bg-brand-50 text-brand-700" : "text-gray-500 hover:text-gray-800"}`;
