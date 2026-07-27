@@ -2,6 +2,7 @@ import enum
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.sql import func
 from app.db import Base
+from datetime import datetime, timezone
 
 class PublishStatus(str, enum.Enum):
     PENDING = "pending"
@@ -27,7 +28,7 @@ class PublishJob(Base):
     attempt_count = Column(Integer, nullable=False, default=0)
     last_error = Column(String, nullable=True)
     linkedin_post_urn = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class PostMedia(Base):
     __tablename__ = "post_media"
