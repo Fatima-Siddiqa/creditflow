@@ -28,7 +28,7 @@ export function SignupPage() {
       const res = await api.post("auth/signup", { email, password });
       const data = await res.json();
       if (!res.ok) {
-        setErrors({ form: data?.error?.message || "Signup failed." });
+        setErrors({ form: data?.detail?.error?.message || "Signup failed." });
         return;
       }
       setDone(true);
