@@ -36,7 +36,8 @@ async def member_joined(payload: dict) -> tuple[str, str, str]:
 
 
 async def invite_created(payload: dict) -> tuple[str, str, str]:
-    body = "You've been invited to join a CreditFlow team account. Log in or sign up to accept."
+    link = f"{settings.frontend_origin}/onboarding?invite_token={payload['token']}"
+    body = f"You've been invited to join a CreditFlow team account. Click to accept: {link}"
     return payload["email"], "You're invited to CreditFlow", body
 
 
