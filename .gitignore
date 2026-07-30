@@ -21,3 +21,5 @@ frontend/.vite/
 .idea/
 
 *.log
+
+run/
