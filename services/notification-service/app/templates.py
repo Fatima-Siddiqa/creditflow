@@ -1,11 +1,12 @@
 """One resolver function per consumed event type. Each returns
 (recipient_email, subject, body_text)."""
 from app.recipient_resolver import resolve_email_for_user, resolve_email_for_account_owner
-
+from app.config import settings
 
 async def user_registered(payload: dict) -> tuple[str, str, str]:
     token = payload["verification_token"]
-    body = f"Welcome to CreditFlow! Verify your email using this token: {token}"
+    link = f"{settings.frontend_origin}/verify-email?token={token}"
+    body = f"Welcome to CreditFlow! Click the link to verify your email: {link}"
     return payload["email"], "Verify your CreditFlow email", body
 
 
