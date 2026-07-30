@@ -114,22 +114,28 @@ async def accept_invite(
         raise _bad_request("invite_expired", "This invite has expired.")
 
     existing = (
-        db.query(AccountMember)
-        .filter(AccountMember.account_id == invite.account_id, AccountMember.user_id == user_id)
+        db.query(Invite)
+        .filter(Invite.account_id == account_id, Invite.email == body.email, Invite.accepted == False)
         .first()
     )
+    raw_token = generate_raw_token()
     if existing is not None:
-        raise _conflict("already_a_member", "You are already a member of this account.")
-
-    invite.accepted = True
-    db.add(AccountMember(account_id=invite.account_id, user_id=user_id, role=invite.role))
+        existing.role = body.role
+        existing.token_hash = hash_token(raw_token)
+        existing.expires_at = datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS)
+        invite = existing
+    else:
+        invite = Invite(account_id=account_id, email=body.email, role=body.role,
+                        token_hash=hash_token(raw_token),
+                        expires_at=datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS))
+        db.add(invite)
     db.commit()
+    db.refresh(invite)
 
-    await publish_event(
-        "member.joined",
-        payload={"account_id": str(invite.account_id), "user_id": str(user_id), "role": invite.role},
-        account_id=invite.account_id,
-    )
+    await publish_event("invite.created", payload={
+        "invite_id": str(invite.id), "account_id": str(account_id),
+        "email": invite.email, "role": invite.role, "token": raw_token,
+    })
 
     try:
         token_data = await issue_scoped_token(user_id, invite.account_id, invite.role)
