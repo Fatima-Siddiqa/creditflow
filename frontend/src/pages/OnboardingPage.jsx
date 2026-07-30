@@ -8,7 +8,7 @@ import { TextInput } from "../components/TextInput.jsx";
 import { Logo } from "../components/Logo.jsx";
 
 export function OnboardingPage() {
-  const { switchAccount, logout } = useAuth();
+  const { switchAccount, logout, accountId: currentAccountId } = useAuth();
   const navigate = useNavigate();
 
   const [accounts, setAccounts] = useState(null); // null = loading
@@ -56,10 +56,9 @@ export function OnboardingPage() {
   // user-service). With exactly one account and no real choice to make,
   // skip straight in instead of making the person click a list of one.
   useEffect(() => {
-    if (accounts && accounts.length === 1 && !error) {
-      enterAccount(accounts[0].account_id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      if (!currentAccountId && accounts && accounts.length === 1 && !error) {
+        enterAccount(accounts[0].account_id);
+      }
   }, [accounts]);
 
   const createTeam = async (e) => {
@@ -96,12 +95,12 @@ export function OnboardingPage() {
     }
   };
 
-  if (accounts === null || (accounts.length === 1 && !error)) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-brand-50">
-        <p className="text-sm text-brand-700">Loading your accounts…</p>
-      </div>
-    );
+  if (accounts === null || (!currentAccountId && accounts.length === 1 && !error)) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-brand-50">
+          <p className="text-sm text-brand-700">Loading your accounts…</p>
+        </div>
+      );
   }
 
   return (
