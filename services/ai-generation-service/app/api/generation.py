@@ -39,7 +39,7 @@ async def generate(
     own lifecycle, including if the client disconnects immediately after
     getting job_id back."""
     account_id = payload["account_id"]
-    model = body.model or settings.default_model
+    model = settings.fallback_models
     if model not in settings.allowed_models:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -70,7 +70,7 @@ async def generate(
     ))
     db.commit()
 
-    task = asyncio.create_task(run_generation_stream(job_id=job_id, model=model, prompt=body.prompt, content_type=body.content_type))
+    task = asyncio.create_task(run_generation_stream(job_id=job_id, model=model, prompt=body.prompt))
     job_registry.register(job_id, task)
 
     return GenerateResponse(job_id=job_id, status=GenerationStatus.RUNNING, model=model)

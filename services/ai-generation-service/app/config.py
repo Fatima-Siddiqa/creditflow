@@ -23,9 +23,14 @@ class Settings(BaseSettings):
     # ---- OpenRouter (PR #3) ----
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    fallback_models: list[str] = [
+        "google/gemma-4-31b-it:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "openai/gpt-oss-20b:free",
+    ]
 
-    allowed_models: list[str] = ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"]
-    default_model: str = "openai/gpt-4o-mini"
+    # allowed_models: list[str] = ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"]
+    # default_model: str = "openai/gpt-4o-mini"
 
     # ---- Cross-service calls (PR #2) ----
     usage_service_url: str = "http://localhost:8005"  # synchronous quota pre-check before accepting a generation request
