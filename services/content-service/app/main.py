@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.staticfiles import StaticFiles
 from app.api.content import router as content_router
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.db import engine
@@ -22,6 +24,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="CreditFlow Content Service", lifespan=lifespan)
+@app.exception_handler(FastAPIHTTPException)
+async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
+    if isinstance(exc.detail, dict) and "error" in exc.detail:
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    return JSONResponse(status_code=exc.status_code, content={"error": {"code": "http_error", "message": str(exc.detail), "details": {}}})
 
 app.include_router(content_router, prefix="/content", tags=["Content"])
 

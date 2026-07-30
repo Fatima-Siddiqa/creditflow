@@ -1,12 +1,21 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.proxy import router as proxy_router
 from app.api.sse import router as sse_router
 from app.api.webhooks import router as webhooks_router
 from app.redis_client import redis_client
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.responses import JSONResponse
 
 app = FastAPI(title="CreditFlow API Gateway")
+
+@app.exception_handler(FastAPIHTTPException)
+async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
+    if isinstance(exc.detail, dict) and "error" in exc.detail:
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    return JSONResponse(status_code=exc.status_code, content={"error": {"code": "http_error", "message": str(exc.detail), "details": {}}})
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin],

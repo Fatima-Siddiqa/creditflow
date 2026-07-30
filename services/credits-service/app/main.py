@@ -1,7 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.responses import JSONResponse
 
 from app.api.credits import router as credits_router
 from app.db import engine
@@ -20,6 +22,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="CreditFlow Credits & Marketplace Service", lifespan=lifespan)
+
+@app.exception_handler(FastAPIHTTPException)
+async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
+    if isinstance(exc.detail, dict) and "error" in exc.detail:
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    return JSONResponse(status_code=exc.status_code, content={"error": {"code": "http_error", "message": str(exc.detail), "details": {}}})
+
 app.include_router(credits_router, prefix="/credits", tags=["Credits"])
 
 
