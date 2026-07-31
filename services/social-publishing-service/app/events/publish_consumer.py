@@ -161,7 +161,7 @@ async def _process_message(message: aio_pika.IncomingMessage, exchange: aio_pika
 
     if applied:
         try:
-            await publish_event("post.published", {"account_id": account_id}, account_id=account_id)
+            await publish_event("post.published", {"account_id": account_id, "content_id": content_id}, account_id=account_id)
         except Exception:
             logger.exception("published to LinkedIn for account %s but failed to publish post.published", account_id)
 
