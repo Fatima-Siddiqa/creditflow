@@ -14,10 +14,6 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 // Mirrors ai-generation-service's settings.allowed_models -- no endpoint
 // exposes this list, so it's hardcoded here. Update both places together
 // if the service's allow-list ever changes.
-const MODELS = [
-  { value: "openai/gpt-4o-mini", label: "GPT-4o mini (fast)" },
-  { value: "anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet (higher quality)" },
-];
 
 const STATUS_STYLES = {
   draft: "bg-gray-100 text-gray-600",
@@ -56,7 +52,6 @@ export function ContentStudioPage() {
   const canPublish = role === "owner" || role === "admin";
 
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState(MODELS[0].value);
   const [streaming, setStreaming] = useState(false);
   const [streamedText, setStreamedText] = useState("");
   const [jobId, setJobId] = useState(null);
@@ -104,7 +99,7 @@ export function ContentStudioPage() {
     setStreaming(true);
 
     try {
-      const res = await api.post("ai/generate", { prompt: prompt.trim(), model, content_type: "post" });
+      const res = await api.post("ai/generate", { prompt: prompt.trim(), content_type: "post" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || "Could not start generation.");
       setJobId(data.job_id);
@@ -221,14 +216,6 @@ export function ContentStudioPage() {
             disabled={streaming}
           />
           <div className="flex items-center gap-2">
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              disabled={streaming}
-              className="rounded-lg border border-gray-300 px-2 py-2 text-sm"
-            >
-              {MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </select>
             {!streaming ? (
               <Button type="submit">Generate</Button>
             ) : (
