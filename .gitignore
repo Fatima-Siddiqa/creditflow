@@ -23,3 +23,6 @@ frontend/.vite/
 *.log
 
 run/
+
+services/content-service/uploads/*
+!services/content-service/uploads/.gitkeep
