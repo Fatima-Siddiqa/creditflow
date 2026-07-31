@@ -6,6 +6,8 @@ import { Card } from "../../components/Card.jsx";
 import { Button } from "../../components/Button.jsx";
 import { TextInput } from "../../components/TextInput.jsx";
 import { ConfirmModal } from "../../components/ConfirmModal.jsx";
+import { AuthedImage } from "../../components/AuthedImage.jsx";
+import { Link } from "react-router-dom";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -49,6 +51,8 @@ async function uploadImage(contentId, file) {
 
 export function ContentStudioPage() {
   const { role } = useAuth();
+  const [scheduleInfo, setScheduleInfo] = useState({}); // content_id -> { publish_at } | null
+
   const canPublish = role === "owner" || role === "admin";
 
   const [prompt, setPrompt] = useState("");
@@ -73,6 +77,17 @@ export function ContentStudioPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || "Could not load content.");
       setDrafts(data);
+      const approvedIds = data.filter((c) => c.status === "approved").map((c) => c.id);
+      const entries = await Promise.all(approvedIds.map(async (id) => {
+        try {
+          const r = await api.get(`scheduler/by-content/${id}`);
+          const d = r.ok ? await r.json() : null;
+          return [id, d];
+        } catch {
+          return [id, null];
+        }
+      }));
+      setScheduleInfo(Object.fromEntries(entries));
     } catch (err) {
       setListError(err.message);
     }
@@ -264,7 +279,7 @@ export function ContentStudioPage() {
               )}
 
               {c.image_url && (
-                <img src={`${BASE_URL}${c.image_url}`} alt="" className="mt-2 h-24 rounded-lg object-cover" />
+                <AuthedImage path={c.image_url} className="mt-2 h-24 rounded-lg object-cover" />
               )}
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -286,9 +301,13 @@ export function ContentStudioPage() {
                   </Button>
                 )}
                 {c.status === "approved" && (
-                  <Button disabled={!canPublish || busyId === c.id} onClick={() => runAction(c.id, "publish-request")}>
-                    Send to publish
-                  </Button>
+                  scheduleInfo[c.id]
+                    ? <span className="text-xs text-sky-700">
+                        Scheduled for {new Date(scheduleInfo[c.id].publish_at).toLocaleString()}
+                      </span>
+                    : <Link to="/app/calendar" className="text-xs font-medium text-brand-600 hover:underline">
+                        Schedule on Calendar →
+                      </Link>
                 )}
                 <Button variant="danger" disabled={busyId === c.id} onClick={() => setPendingDelete(c.id)}>
                   Delete
