@@ -9,18 +9,21 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.db import engine
-from app.events.ai_consumer import run_consumer
+from app.events.ai_consumer import run_consumer as run_ai_consumer
+from app.events.social_consumer import run_consumer as run_social_consumer
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    consumer_task = asyncio.create_task(run_consumer())
+    ai_task = asyncio.create_task(run_ai_consumer())
+    social_task = asyncio.create_task(run_social_consumer())
     yield
-    consumer_task.cancel()
-    try:
-        await consumer_task
-    except asyncio.CancelledError:
-        pass
+    for task in (ai_task, social_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="CreditFlow Content Service", lifespan=lifespan)
