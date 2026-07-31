@@ -46,8 +46,10 @@ async def create_invite(
     db: Session = Depends(get_db),
     payload: dict = Depends(get_current_payload),
 ):
-    """Owner/admin only — spec §8 Service 3: 'Team invite flow ...
-    restricted to owner/admin.'"""
+    """Owner/admin only. Re-inviting an email with an existing pending
+    invite rotates that row's token/expiry instead of creating a
+    duplicate -- avoids the same email showing up twice in the pending
+    list, per the resend-not-duplicate design."""
     if body.role not in VALID_ROLES:
         raise _bad_request("invalid_role", f"role must be one of: {', '.join(sorted(VALID_ROLES))}.")
 
@@ -55,30 +57,34 @@ async def create_invite(
     membership = get_live_membership(db, account_id, user_id)
     require_role(membership, {"owner", "admin"})
 
-    raw_token = generate_raw_token()
-    # notification-service (Phase 13) doesn't exist yet — same dev-console
-    # fallback auth-service uses for signup/forgot-password, so invites
-    # can be tested end-to-end locally without a real email provider.
-    print(f"[DEV] Invite token for {body.email} to account {account_id}: {raw_token}")
-
-    invite = Invite(
-        account_id=account_id,
-        email=body.email,
-        role=body.role,
-        token_hash=hash_token(raw_token),
-        expires_at=datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS),
+    existing = (
+        db.query(Invite)
+        .filter(Invite.account_id == account_id, Invite.email == body.email, Invite.accepted == False)  # noqa: E712
+        .first()
     )
-    db.add(invite)
+    raw_token = generate_raw_token()
+    if existing is not None:
+        existing.role = body.role
+        existing.token_hash = hash_token(raw_token)
+        existing.expires_at = datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS)
+        invite = existing
+    else:
+        invite = Invite(
+            account_id=account_id, email=body.email, role=body.role,
+            token_hash=hash_token(raw_token),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS),
+        )
+        db.add(invite)
     db.commit()
     db.refresh(invite)
+
+    print(f"[DEV] Invite token for {body.email} to account {account_id}: {raw_token}")
 
     await publish_event(
         "invite.created",
         payload={
-            "invite_id": str(invite.id),
-            "account_id": str(account_id),
-            "email": invite.email,
-            "role": invite.role,
+            "invite_id": str(invite.id), "account_id": str(account_id),
+            "email": invite.email, "role": invite.role, "token": raw_token,  # <-- was missing; notification-service requires this
         },
         account_id=account_id,
     )
@@ -89,19 +95,62 @@ async def create_invite(
     )
 
 
+@router.post("/accounts/{account_id}/invites/{invite_id}/resend", response_model=InviteResponse)
+async def resend_invite(
+    account_id: uuid.UUID,
+    invite_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_current_payload),
+):
+    """Explicit resend button on an existing pending invite row --
+    rotates token/expiry and re-publishes invite.created, same as
+    re-inviting the same email via create_invite, but from the
+    Resend button next to a specific pending row."""
+    user_id = uuid.UUID(payload["sub"])
+    membership = get_live_membership(db, account_id, user_id)
+    require_role(membership, {"owner", "admin"})
+
+    invite = db.query(Invite).filter(Invite.id == invite_id, Invite.account_id == account_id).one_or_none()
+    if invite is None:
+        raise _not_found("invite_not_found", "No such invite.")
+    if invite.accepted:
+        raise _bad_request("invite_already_used", "This invite has already been accepted.")
+
+    raw_token = generate_raw_token()
+    invite.token_hash = hash_token(raw_token)
+    invite.expires_at = datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS)
+    db.commit()
+    db.refresh(invite)
+
+    print(f"[DEV] Invite token for {invite.email} to account {account_id}: {raw_token}")
+
+    await publish_event(
+        "invite.created",
+        payload={
+            "invite_id": str(invite.id), "account_id": str(account_id),
+            "email": invite.email, "role": invite.role, "token": raw_token,
+        },
+        account_id=account_id,
+    )
+
+    return InviteResponse(
+        id=invite.id, account_id=invite.account_id, email=invite.email,
+        role=invite.role, expires_at=invite.expires_at, accepted=invite.accepted,
+    )
+
 @router.post("/invites/{token}/accept", response_model=AcceptInviteResponse)
 async def accept_invite(
     token: str,
     db: Session = Depends(get_db),
     payload: dict = Depends(get_current_payload),
 ):
-    """Caller must be authenticated (any valid token, account-agnostic is
-    fine — same reasoning as create_team_account). Does NOT verify the
-    invite's email matches the caller's own email: user-service has no
-    access to auth-service's email data without a new lookup endpoint
-    there, which is out of this PR's scope. Documented gap: anyone
-    holding a valid invite token plus any authenticated session can
-    accept it, regardless of which email it was addressed to."""
+    """Caller must be authenticated (any valid token, account-agnostic
+    is fine). Does NOT verify the invite's email matches the caller's
+    own email -- user-service has no access to auth-service's email
+    data without a new lookup endpoint, out of scope here. Documented
+    gap: anyone holding a valid invite token plus any authenticated
+    session can accept it, regardless of which email it was addressed
+    to."""
     user_id = uuid.UUID(payload["sub"])
     token_hash = hash_token(token)
 
@@ -113,49 +162,29 @@ async def accept_invite(
     if invite.expires_at < datetime.now(timezone.utc):
         raise _bad_request("invite_expired", "This invite has expired.")
 
-    existing = (
-        db.query(Invite)
-        .filter(Invite.account_id == account_id, Invite.email == body.email, Invite.accepted == False)
-        .first()
+    existing_membership = (
+        db.query(AccountMember)
+        .filter(AccountMember.account_id == invite.account_id, AccountMember.user_id == user_id)
+        .one_or_none()
     )
-    raw_token = generate_raw_token()
-    if existing is not None:
-        existing.role = body.role
-        existing.token_hash = hash_token(raw_token)
-        existing.expires_at = datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS)
-        invite = existing
-    else:
-        invite = Invite(account_id=account_id, email=body.email, role=body.role,
-                        token_hash=hash_token(raw_token),
-                        expires_at=datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS))
-        db.add(invite)
+    if existing_membership is None:
+        db.add(AccountMember(account_id=invite.account_id, user_id=user_id, role=invite.role))
+    invite.accepted = True
     db.commit()
-    db.refresh(invite)
 
-    await publish_event("invite.created", payload={
-        "invite_id": str(invite.id), "account_id": str(account_id),
-        "email": invite.email, "role": invite.role, "token": raw_token,
-    })
+    await publish_event("member.joined", payload={
+        "account_id": str(invite.account_id), "user_id": str(user_id), "role": invite.role,
+    }, account_id=invite.account_id)
 
     try:
         token_data = await issue_scoped_token(user_id, invite.account_id, invite.role)
     except httpx.HTTPError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={
-                "error": {
-                    "code": "auth_service_unavailable",
-                    "message": "Could not mint account-scoped session.",
-                    "details": {},
-                }
-            },
+            detail={"error": {"code": "auth_service_unavailable", "message": "Could not mint account-scoped session.", "details": {}}},
         )
 
-    return AcceptInviteResponse(
-        access_token=token_data["access_token"],
-        account_id=invite.account_id,
-        role=invite.role,
-    )
+    return AcceptInviteResponse(access_token=token_data["access_token"], account_id=invite.account_id, role=invite.role)
 
 @router.get("/accounts/{account_id}/invites", response_model=list[InviteResponse])
 def list_invites(
