@@ -34,10 +34,18 @@ done
 (
   cd scheduler-service
   source venv/Scripts/activate
-  celery -A app.celery_app worker --beat --loglevel=info -c 1
-) > ../logs/scheduler-celery.log 2>&1 &
+  celery -A app.celery_app worker --loglevel=info --pool=solo
+) > ../logs/scheduler-celery-worker.log 2>&1 &
 PIDS+=($!)
-echo "started scheduler celery worker+beat (pid $!)"
+echo "started scheduler celery worker (pid $!)"
+
+(
+  cd scheduler-service
+  source venv/Scripts/activate
+  celery -A app.celery_app beat --loglevel=info
+) > ../logs/scheduler-celery-beat.log 2>&1 &
+PIDS+=($!)
+echo "started scheduler celery beat (pid $!)"
 
 trap 'echo "stopping everything..."; kill "${PIDS[@]}" 2>/dev/null' EXIT
 echo "all services launching -- tail -f logs/*.log to watch. Ctrl+C stops everything."
