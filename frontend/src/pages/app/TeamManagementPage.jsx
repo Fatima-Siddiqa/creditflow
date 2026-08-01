@@ -11,7 +11,7 @@ const ROLES = ["owner", "admin", "member"];
 export function TeamManagementPage() {
   const { accountId, userId } = useAuth();
   const [members, setMembers] = useState([]);
-  const [invites, setInvites] = useState([]);
+  const [inviteError, setInviteError] = useState(null);
   const [error, setError] = useState(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
@@ -48,10 +48,10 @@ export function TeamManagementPage() {
     // than creating a duplicate) if this client-side check is bypassed
     // by a stale `invites` list.
     const pending = invites.find((i) => i.email.toLowerCase() === email.toLowerCase());
-    if (pending) return setError(`Invitation to ${email} was already sent and is pending.`);
+    if (pending) return setInviteError(`Invitation to ${email} was already sent and is pending.`);
 
     setBusy(true);
-    setError(null);
+    setInviteError(null);
     try {
       const res = await api.post(`accounts/${accountId}/invites`, { email, role: inviteRole });
       const data = await res.json();
@@ -59,7 +59,7 @@ export function TeamManagementPage() {
       setInviteEmail("");
       await load();
     } catch (err) {
-      setError(err.message);
+      setInviteError(err.message);
     } finally {
       setBusy(false);
     }
@@ -158,6 +158,7 @@ export function TeamManagementPage() {
 
       <Card>
         <h2 className="mb-3 text-sm font-semibold text-gray-900">Invite a member</h2>
+        {inviteError && <p className="mb-2 text-sm text-red-600">{inviteError}</p>}
         <form onSubmit={sendInvite} className="flex flex-wrap gap-2">
           <TextInput type="email" placeholder="Email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} className="flex-1" />
           <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="rounded-lg border border-gray-300 px-2 py-2 text-sm">
