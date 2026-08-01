@@ -11,9 +11,6 @@ import { Link } from "react-router-dom";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-// Mirrors ai-generation-service's settings.allowed_models -- no endpoint
-// exposes this list, so it's hardcoded here. Update both places together
-// if the service's allow-list ever changes.
 
 const STATUS_STYLES = {
   draft: "bg-gray-100 text-gray-600",
@@ -52,6 +49,9 @@ export function ContentStudioPage() {
   const canPublish = role === "owner" || role === "admin";
 
   const [prompt, setPrompt] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [scraping, setScraping] = useState(false);
+  const [scrapeStatus, setScrapeStatus] = useState(null); // e.g. "Scraping website…"
   const [streaming, setStreaming] = useState(false);
   const [streamedText, setStreamedText] = useState("");
   const [jobId, setJobId] = useState(null);
@@ -91,15 +91,58 @@ export function ContentStudioPage() {
   useEffect(() => { loadDrafts(); }, [loadDrafts]);
   useEffect(() => () => eventSourceRef.current?.close(), []); // cleanup on unmount
 
+  const scrapeForContext = async (url) => {
+    setScraping(true);
+    setScrapeStatus("Scraping website…");
+    try {
+      const startRes = await api.post("scraper/jobs", { target_url: url });
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData?.error?.message || "Could not start scrape.");
+
+      const jobId = startData.job_id;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const pollRes = await api.get(`scraper/jobs/${jobId}`);
+        const job = await pollRes.json();
+        if (!pollRes.ok) throw new Error(job?.error?.message || "Could not check scrape status.");
+
+        if (job.status === "completed") {
+          setScrapeStatus("Scraping complete.");
+          return job.data; // { title, text_excerpt, ... }
+        }
+        if (job.status === "failed") {
+          throw new Error(job.error || "Scrape failed.");
+        }
+        setScrapeStatus(`Scraping website… (${job.status})`);
+      }
+      throw new Error("Scrape timed out.");
+    } finally {
+      setScraping(false);
+    }
+  };
+
   const startGeneration = async (e) => {
     e.preventDefault();
     if (!prompt.trim()) return setGenError("Prompt is required.");
     setGenError(null);
+    setScrapeStatus(null);
     setStreamedText("");
-    setStreaming(true);
 
+    let finalPrompt = prompt.trim();
+
+    if (sourceUrl.trim()) {
+      try {
+        const doc = await scrapeForContext(sourceUrl.trim());
+        finalPrompt = `Background research from ${sourceUrl.trim()} (titled "${doc.title}"):\n${doc.text_excerpt}\n\nUsing the above as context, ${finalPrompt}`;
+      } catch (err) {
+        setGenError(`Scraping failed: ${err.message}`);
+        return; // don't proceed to generation on a failed scrape
+      }
+    }
+
+    setStreaming(true);
     try {
-      const res = await api.post("ai/generate", { prompt: prompt.trim(), content_type: "post" });
+      const res = await api.post("ai/generate", { prompt: finalPrompt, content_type: "post" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || "Could not start generation.");
       setJobId(data.job_id);
@@ -207,6 +250,12 @@ export function ContentStudioPage() {
       <Card>
         <h2 className="mb-3 text-sm font-semibold text-gray-900">Generate a post</h2>
         {genError && <p className="mb-2 text-sm text-red-600">{genError}</p>}
+        {scraping && (
+          <div className="mb-2 flex items-center gap-2 text-sm text-brand-600">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600" />
+            {scrapeStatus}
+          </div>
+        )}
         <form onSubmit={startGeneration} className="space-y-3">
           <TextInput
             label="Prompt"
@@ -214,6 +263,13 @@ export function ContentStudioPage() {
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Write a LinkedIn post about..."
             disabled={streaming}
+          />
+          <TextInput
+            label="Source URL (optional)"
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+            placeholder="https://example.com/article"
+            disabled={streaming || scraping}
           />
           <div className="flex items-center gap-2">
             {!streaming ? (

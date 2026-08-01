@@ -14,7 +14,7 @@ async def execute_job(job_id: str, account_id: str | None, target_url: str, job_
     emits scrape.completed / scrape.failed. Shared by the REST endpoint's
     background task and the scrape.requested consumer -- so a job triggered
     either way behaves identically and never gets stuck in 'running'."""
-    scrape_jobs.update_one({"_id": job_id}, {"$set": {"status": "running"}})
+    scrape_jobs.update_one({"_id": job_id}, {"$set": {"status": "completed", "document_id": doc_id, "data": data}})
     try:
         data = await run_scrape(target_url, job_type)
     except ScrapeBlocked as exc:
