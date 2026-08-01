@@ -12,6 +12,7 @@ from app.internal_auth_client import issue_scoped_token
 from app.models import AccountMember, Invite
 from app.schemas import AcceptInviteResponse, CreateInviteRequest, InviteResponse
 from app.security import generate_raw_token, hash_token
+from app.models import Account
 
 router = APIRouter()
 
@@ -56,6 +57,7 @@ async def create_invite(
     user_id = uuid.UUID(payload["sub"])
     membership = get_live_membership(db, account_id, user_id)
     require_role(membership, {"owner", "admin"})
+    account = db.query(Account).filter(Account.id == account_id).one()
 
     existing = (
         db.query(Invite)
@@ -84,7 +86,8 @@ async def create_invite(
         "invite.created",
         payload={
             "invite_id": str(invite.id), "account_id": str(account_id),
-            "email": invite.email, "role": invite.role, "token": raw_token,  # <-- was missing; notification-service requires this
+            "email": invite.email, "role": invite.role, "token": raw_token,
+            "account_name": account.name,   # <-- ADD THIS LINE
         },
         account_id=account_id,
     )
@@ -109,6 +112,7 @@ async def resend_invite(
     user_id = uuid.UUID(payload["sub"])
     membership = get_live_membership(db, account_id, user_id)
     require_role(membership, {"owner", "admin"})
+    account = db.query(Account).filter(Account.id == account_id).one()
 
     invite = db.query(Invite).filter(Invite.id == invite_id, Invite.account_id == account_id).one_or_none()
     if invite is None:
@@ -129,6 +133,7 @@ async def resend_invite(
         payload={
             "invite_id": str(invite.id), "account_id": str(account_id),
             "email": invite.email, "role": invite.role, "token": raw_token,
+            "account_name": account.name,
         },
         account_id=account_id,
     )
