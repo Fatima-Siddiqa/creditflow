@@ -5,6 +5,13 @@ import httpx
 
 from app.config import settings
 
+SYSTEM_PROMPT = (
+    "You are a LinkedIn post writer. Output exactly one finished post, ready to "
+    "publish as-is. Do not offer multiple versions, options, or alternatives. "
+    "Do not include headings, labels, meta-commentary, or explanations of your "
+    "choices. Do not wrap the output in markdown code fences. Just the post text "
+    "itself, including any hashtags at the end."
+)
 
 class OpenRouterError(Exception):
     """Raised for both transport failures (timeout, connection refused,
@@ -26,7 +33,7 @@ async def stream_chat_completion(models: list[str], prompt: str, result: dict) -
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)) as client:
                 async with client.stream("POST", f"{settings.openrouter_base_url}/chat/completions",
-                                          json={"model": model, "messages": [{"role": "user", "content": prompt}], "stream": True},
+                                          json={"model": model, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}], "stream": True},
                                           headers={"Authorization": f"Bearer {settings.openrouter_api_key}", "Content-Type": "application/json"}) as response:
                     if response.status_code != 200:
                         body = await response.aread()
