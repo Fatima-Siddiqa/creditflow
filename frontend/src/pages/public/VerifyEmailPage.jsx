@@ -6,7 +6,7 @@ import { api } from "../../api/client.js";
 export function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token");
-  const [status, setStatus] = useState("pending");
+  const [status, setStatus] = useState("pending"); // pending | success | error
   const attempted = useRef(false);
 
   useEffect(() => {
