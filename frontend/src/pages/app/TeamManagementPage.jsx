@@ -11,6 +11,7 @@ const ROLES = ["owner", "admin", "member"];
 export function TeamManagementPage() {
   const { accountId, userId } = useAuth();
   const [members, setMembers] = useState([]);
+  const [invites, setInvites] = useState([]);
   const [inviteError, setInviteError] = useState(null);
   const [error, setError] = useState(null);
   const [inviteEmail, setInviteEmail] = useState("");
