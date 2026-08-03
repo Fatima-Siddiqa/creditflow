@@ -15,7 +15,7 @@ def _button_html(intro: str, link: str, label: str) -> str:
 
 async def user_registered(payload: dict) -> tuple[str, str, str, str]:
     token = payload["verification_token"]
-    link = f"{settings.frontend_origin}/verify-email?token={token}"
+    link = f"{settings.frontend_origin}/app/onboarding?invite_token={payload['token']}"
     text = f"Welcome to CreditFlow! Click the link to verify your email: {link}"
     html = _button_html("Welcome to CreditFlow! Verify your email to get started.", link, "Verify email")
     return payload["email"], "Verify your CreditFlow email", text, html
