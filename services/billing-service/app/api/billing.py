@@ -43,8 +43,8 @@ def checkout_session(
 
     checkout_url = create_checkout_session(
         sub.stripe_customer_id, body.plan_tier,
-        success_url="http://localhost:3000/billing/success",
-        cancel_url="http://localhost:3000/billing/cancel",
+        success_url=f"{settings.FRONTEND_BASE_URL}/app/billing?checkout=success",
+        cancel_url=f"{settings.FRONTEND_BASE_URL}/app/billing?checkout=cancelled",
     )
     return CheckoutSessionResponse(checkout_url=checkout_url)
 
