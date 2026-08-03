@@ -6,6 +6,23 @@ import { Button } from "../../components/Button.jsx";
 
 const PLANS = ["pro", "team"];
 
+// Keep in sync with credits-service's PLAN_CREDIT_GRANTS
+// ({"free": 0, "pro": 1000, "team": 5000}). Ideally this lives behind a
+// shared GET /billing/plans endpoint instead of being hardcoded in three
+// places, but that's a bigger refactor — flagging it here for now.
+const PLAN_DETAILS = {
+  pro: {
+    price: "$10/mo",
+    credits: 1000,
+    features: ["1,000 AI credits/mo", "LinkedIn publishing", "Priority support"],
+  },
+  team: {
+    price: "$40/mo",
+    credits: 5000,
+    features: ["5,000 AI credits/mo", "Up to 10 team members", "LinkedIn publishing", "Priority support"],
+  },
+};
+
 export function BillingPage() {
   const { accountId } = useAuth();
   const [profile, setProfile] = useState(null);
@@ -70,6 +87,24 @@ export function BillingPage() {
       <Card>
         <h2 className="mb-2 text-sm font-semibold text-gray-900">Current plan</h2>
         <p className="mb-4 text-2xl font-bold capitalize text-gray-900">{profile.plan_tier}</p>
+
+        {/* Plan comparison — shows price/credits/features before the user commits to Stripe checkout */}
+        <div className="mb-4 grid gap-4 sm:grid-cols-2">
+          {PLANS.map((p) => (
+            <div
+              key={p}
+              className={`rounded-lg border p-4 ${profile.plan_tier === p ? "border-gray-900" : "border-gray-200"}`}
+            >
+              <p className="font-semibold capitalize text-gray-900">{p}</p>
+              <p className="text-xl font-bold text-gray-900">{PLAN_DETAILS[p].price}</p>
+              <p className="mb-2 text-sm text-gray-500">{PLAN_DETAILS[p].credits.toLocaleString()} credits/mo</p>
+              <ul className="list-inside list-disc text-xs text-gray-500">
+                {PLAN_DETAILS[p].features.map((f) => <li key={f}>{f}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+
         <div className="flex flex-wrap gap-2">
           {onFree
             ? PLANS.map((p) => <Button key={p} disabled={busy} onClick={() => subscribe(p)}>Upgrade to {p}</Button>)

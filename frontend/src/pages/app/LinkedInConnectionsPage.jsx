@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../../api/client.js";
 import { Card } from "../../components/Card.jsx";
 import { Button } from "../../components/Button.jsx";
@@ -25,6 +26,24 @@ export function LinkedInConnectionsPage() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+
+  // Set by social-publishing-service's /linkedin/callback redirect
+  // (?linkedin_connected=1 / ?linkedin_error=1) -- there's no frontend
+  // JS involved in that leg of the OAuth flow, so this is the only
+  // place that finds out how it went.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const justConnected = searchParams.get("linkedin_connected") === "1";
+  const connectError = searchParams.get("linkedin_error") === "1";
+
+  useEffect(() => {
+    if (justConnected || connectError) {
+      // Strip the query params once read so refreshing this page
+      // doesn't keep re-showing a banner for an OAuth round-trip that
+      // already happened.
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = useCallback(async () => {
     setError(null);
@@ -79,6 +98,8 @@ export function LinkedInConnectionsPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-lg font-semibold text-gray-900">LinkedIn Connections</h1>
+      {justConnected && <p className="text-sm text-accent-700">LinkedIn connected.</p>}
+      {connectError && <p className="text-sm text-red-600">Could not connect to LinkedIn — try again.</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <Card className="max-w-md">

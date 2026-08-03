@@ -49,9 +49,16 @@ case "$(uname -s)" in MINGW*|MSYS*) CELERY_POOL_ARGS=(--pool=solo) ;; esac  # Wi
 (
   cd services/scheduler-service
   bin="$(venv_bin .venv)"
-  nohup "$bin/celery" -A app.celery_app worker --beat --loglevel=info "${CELERY_POOL_ARGS[@]}" \
-    > ../../logs/scheduler-celery.log 2>&1 &
-  echo $! > ../../run/scheduler-celery.pid
+  nohup "$bin/celery" -A app.celery_app worker --loglevel=info "${CELERY_POOL_ARGS[@]}" \
+    > ../../logs/scheduler-celery-worker.log 2>&1 &
+  echo $! > ../../run/scheduler-celery-worker.pid
+)
+(
+  cd services/scheduler-service
+  bin="$(venv_bin .venv)"
+  nohup "$bin/celery" -A app.celery_app beat --loglevel=info \
+    > ../../logs/scheduler-celery-beat.log 2>&1 &
+  echo $! > ../../run/scheduler-celery-beat.pid
 )
 
 sleep 2

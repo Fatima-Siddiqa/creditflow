@@ -21,3 +21,10 @@ frontend/.vite/
 .idea/
 
 *.log
+
+run/
+
+services/content-service/uploads/*
+!services/content-service/uploads/.gitkeep
+
+services/scheduler-service/celerybeat-schedule*

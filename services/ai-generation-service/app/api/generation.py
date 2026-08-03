@@ -27,24 +27,8 @@ async def generate(
     payload: dict = Depends(get_current_payload),
     authorization: str | None = Header(default=None),
 ):
-    """Creates the job row, starts the background OpenRouter stream, and
-    returns job_id immediately. Per spec §4's "streaming AI text output
-    (SSE, token-by-token)" requirement, the frontend calls this then
-    immediately opens GET /api/ai/stream/{job_id} on the Gateway -- there
-    is no window where it's waiting on a synchronous generation call to
-    finish before it can start listening.
-
-    asyncio.create_task (not FastAPI's BackgroundTasks) is deliberate:
-    the stream must keep running independent of this request/response's
-    own lifecycle, including if the client disconnects immediately after
-    getting job_id back."""
     account_id = payload["account_id"]
-    model = body.model or settings.default_model
-    if model not in settings.allowed_models:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_error("invalid_model", f"'{model}' is not in the allowed model list."),
-        )
+    models = settings.fallback_models
 
     quota = await check_quota(authorization)
     if not quota.get("allowed", False):
@@ -58,7 +42,7 @@ async def generate(
         id=job_id,
         account_id=account_id,
         created_by_user_id=payload["sub"],
-        model=model,
+        model=models[0],  # placeholder until the worker learns which one actually won; _mark_completed/_mark_failed overwrite this
         status=GenerationStatus.RUNNING,
         content_type=body.content_type,
     ))
@@ -70,11 +54,10 @@ async def generate(
     ))
     db.commit()
 
-    task = asyncio.create_task(run_generation_stream(job_id=job_id, model=model, prompt=body.prompt, content_type=body.content_type))
+    task = asyncio.create_task(run_generation_stream(job_id=job_id, models=models, prompt=body.prompt))
     job_registry.register(job_id, task)
 
-    return GenerateResponse(job_id=job_id, status=GenerationStatus.RUNNING, model=model)
-
+    return GenerateResponse(job_id=job_id, status=GenerationStatus.RUNNING, model=models[0])
 
 @router.post("/generate/{job_id}/cancel", response_model=CancelResponse, status_code=status.HTTP_202_ACCEPTED)
 def cancel(

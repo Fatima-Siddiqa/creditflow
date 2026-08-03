@@ -12,6 +12,7 @@ export function TeamManagementPage() {
   const { accountId, userId } = useAuth();
   const [members, setMembers] = useState([]);
   const [invites, setInvites] = useState([]);
+  const [inviteError, setInviteError] = useState(null);
   const [error, setError] = useState(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
@@ -38,19 +39,42 @@ export function TeamManagementPage() {
 
   const sendInvite = async (e) => {
     e.preventDefault();
-    if (!inviteEmail.trim()) return setError("Email is required.");
+    const email = inviteEmail.trim();
+    if (!email) return setError("Email is required.");
+
+    // Check the already-loaded pending invites before hitting the API,
+    // so a re-invite of the same email surfaces as a clear inline
+    // message instead of firing off another POST. The backend also
+    // safely dedupes (rotates the existing row's token/expiry rather
+    // than creating a duplicate) if this client-side check is bypassed
+    // by a stale `invites` list.
+    const pending = invites.find((i) => i.email.toLowerCase() === email.toLowerCase());
+    if (pending) return setInviteError(`Invitation to ${email} was already sent and is pending.`);
+
     setBusy(true);
-    setError(null);
+    setInviteError(null);
     try {
-      const res = await api.post(`accounts/${accountId}/invites`, { email: inviteEmail.trim(), role: inviteRole });
+      const res = await api.post(`accounts/${accountId}/invites`, { email, role: inviteRole });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || "Could not send invite.");
       setInviteEmail("");
       await load();
     } catch (err) {
-      setError(err.message);
+      setInviteError(err.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const resendInvite = async (invite) => {
+    setError(null);
+    try {
+      const res = await api.post(`accounts/${accountId}/invites/${invite.id}/resend`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error?.message || "Could not resend invite.");
+      await load();
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -121,9 +145,12 @@ export function TeamManagementPage() {
           <h2 className="mb-3 text-sm font-semibold text-gray-900">Pending invites</h2>
           <div className="space-y-1 text-sm text-gray-600">
             {invites.map((i) => (
-              <div key={i.id} className="flex justify-between">
+              <div key={i.id} className="flex items-center justify-between">
                 <span>{i.email}</span>
-                <span className="text-xs text-gray-400">{i.role} · expires {new Date(i.expires_at).toLocaleDateString()}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">{i.role} · expires {new Date(i.expires_at).toLocaleDateString()}</span>
+                  <Button variant="outline" onClick={() => resendInvite(i)}>Resend</Button>
+                </div>
               </div>
             ))}
           </div>
@@ -132,6 +159,7 @@ export function TeamManagementPage() {
 
       <Card>
         <h2 className="mb-3 text-sm font-semibold text-gray-900">Invite a member</h2>
+        {inviteError && <p className="mb-2 text-sm text-red-600">{inviteError}</p>}
         <form onSubmit={sendInvite} className="flex flex-wrap gap-2">
           <TextInput type="email" placeholder="Email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} className="flex-1" />
           <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="rounded-lg border border-gray-300 px-2 py-2 text-sm">

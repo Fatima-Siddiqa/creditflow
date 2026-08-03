@@ -1,27 +1,37 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.staticfiles import StaticFiles
 from app.api.content import router as content_router
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.db import engine
-from app.events.ai_consumer import run_consumer
+from app.events.ai_consumer import run_consumer as run_ai_consumer
+from app.events.social_consumer import run_consumer as run_social_consumer
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    consumer_task = asyncio.create_task(run_consumer())
+    ai_task = asyncio.create_task(run_ai_consumer())
+    social_task = asyncio.create_task(run_social_consumer())
     yield
-    consumer_task.cancel()
-    try:
-        await consumer_task
-    except asyncio.CancelledError:
-        pass
+    for task in (ai_task, social_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="CreditFlow Content Service", lifespan=lifespan)
+@app.exception_handler(FastAPIHTTPException)
+async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
+    if isinstance(exc.detail, dict) and "error" in exc.detail:
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    return JSONResponse(status_code=exc.status_code, content={"error": {"code": "http_error", "message": str(exc.detail), "details": {}}})
 
 app.include_router(content_router, prefix="/content", tags=["Content"])
 

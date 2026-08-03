@@ -48,7 +48,7 @@ async def handle_event(event: dict) -> bool:
         db.close()
 
     try:
-        recipient, subject, body = await resolver(event["payload"])
+        recipient, subject, body_text, body_html = await resolver(event["payload"])
     except RecipientResolutionError as exc:
         logger.error("recipient resolution failed for %s: %s", event_type, exc)
         _log_attempt(event_type, recipient="unknown", status="failed", error=str(exc))
@@ -56,7 +56,7 @@ async def handle_event(event: dict) -> bool:
         return True
 
     try:
-        await send_email(recipient, subject, body)
+        await send_email(recipient, subject, body_text, body_html)
     except EmailSendError as exc:
         logger.error("email send failed for %s to %s: %s", event_type, recipient, exc)
         _log_attempt(event_type, recipient, status="failed", error=str(exc))

@@ -1,6 +1,7 @@
 import uuid, httpx
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -30,36 +31,53 @@ def connect(payload: dict = Depends(get_current_payload)):
 
 @router.get("/linkedin/callback")
 async def callback(code: str, state: str, db: Session = Depends(get_db)):
+    """LinkedIn redirects the raw browser here -- there's no JWT, no
+    frontend JS involved, just a GET with ?code&state. So on success
+    (or failure) this has to send the browser back into the actual app
+    via a 302, not return JSON the user would otherwise be stuck
+    staring at on a bare API host:port. `state` carries account_id
+    (set in connect() above), not a CSRF nonce -- unchanged from
+    before, just noting it since this endpoint has no other way to
+    know which account is connecting."""
     account_id = state
-    async with httpx.AsyncClient() as client:
-        token_resp = await client.post(LINKEDIN_TOKEN_URL, data={
-            "grant_type": "authorization_code", "code": code,
-            "redirect_uri": settings.linkedin_redirect_uri,
-            "client_id": settings.linkedin_client_id, "client_secret": settings.linkedin_client_secret,
-        })
-        token_resp.raise_for_status()
-        tokens = token_resp.json()
+    try:
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(LINKEDIN_TOKEN_URL, data={
+                "grant_type": "authorization_code", "code": code,
+                "redirect_uri": settings.linkedin_redirect_uri,
+                "client_id": settings.linkedin_client_id, "client_secret": settings.linkedin_client_secret,
+            })
+            token_resp.raise_for_status()
+            tokens = token_resp.json()
 
-        userinfo_resp = await client.get(LINKEDIN_USERINFO_URL, headers={"Authorization": f"Bearer {tokens['access_token']}"})
-        userinfo_resp.raise_for_status()
-        member_urn = f"urn:li:person:{userinfo_resp.json()['sub']}"
+            userinfo_resp = await client.get(LINKEDIN_USERINFO_URL, headers={"Authorization": f"Bearer {tokens['access_token']}"})
+            userinfo_resp.raise_for_status()
+            member_urn = f"urn:li:person:{userinfo_resp.json()['sub']}"
 
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=tokens["expires_in"])
-    conn = db.query(SocialConnection).filter(SocialConnection.account_id == account_id).one_or_none()
-    if conn is None:
-        conn = SocialConnection(account_id=account_id, linkedin_member_urn=member_urn,
-                                 access_token_enc=encrypt(tokens["access_token"]),
-                                 refresh_token_enc=encrypt(tokens["refresh_token"]) if "refresh_token" in tokens else None,
-                                 expires_at=expires_at)
-        db.add(conn)
-    else:
-        conn.linkedin_member_urn = member_urn
-        conn.access_token_enc = encrypt(tokens["access_token"])
-        if "refresh_token" in tokens:
-            conn.refresh_token_enc = encrypt(tokens["refresh_token"])
-        conn.expires_at = expires_at
-    db.commit()
-    return {"status": "connected"}
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=tokens["expires_in"])
+        conn = db.query(SocialConnection).filter(SocialConnection.account_id == account_id).one_or_none()
+        if conn is None:
+            conn = SocialConnection(account_id=account_id, linkedin_member_urn=member_urn,
+                                     access_token_enc=encrypt(tokens["access_token"]),
+                                     refresh_token_enc=encrypt(tokens["refresh_token"]) if "refresh_token" in tokens else None,
+                                     expires_at=expires_at)
+            db.add(conn)
+        else:
+            conn.linkedin_member_urn = member_urn
+            conn.access_token_enc = encrypt(tokens["access_token"])
+            if "refresh_token" in tokens:
+                conn.refresh_token_enc = encrypt(tokens["refresh_token"])
+            conn.expires_at = expires_at
+        db.commit()
+    except (httpx.HTTPError, KeyError):
+        # Same "get the browser back into the app" reasoning applies to
+        # a failed exchange -- a raw 502/HTTPException here would leave
+        # the user stranded on the gateway's bare JSON, same problem as
+        # the success path had. ?linkedin_error=1 lets the frontend
+        # show a real error state instead of silently claiming success.
+        return RedirectResponse(url=f"{settings.frontend_base_url}/app/linkedin?linkedin_error=1")
+
+    return RedirectResponse(url=f"{settings.frontend_base_url}/app/linkedin?linkedin_connected=1")
 
 
 @router.delete("/linkedin/disconnect")

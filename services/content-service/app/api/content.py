@@ -112,23 +112,6 @@ async def approve_content(content_id: str, db: Session = Depends(get_db), payloa
     await publish_event("content.updated", {"content_id": content_id, "account_id": content.account_id, "status": "approved"}, account_id=content.account_id)
     return _to_response(db, content)
 
-
-@router.post("/{content_id}/publish-request", response_model=ContentResponse)
-async def publish_request_content(content_id: str, db: Session = Depends(get_db), payload: dict = Depends(get_current_payload)):
-    """Only gates the status machine -- the actual LinkedIn publish
-    happens in Scheduler -> Social Publishing (Phase 10/11), per spec."""
-    require_publish_role(payload)
-    content = _get_owned_content(db, content_id, payload["account_id"])
-    if content.status != ContentStatus.APPROVED:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_error("invalid_transition", f"Cannot publish-request from status '{content.status.value}'."))
-    content.status = ContentStatus.PUBLISHED
-    content.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(content)
-
-    await publish_event("content.updated", {"content_id": content_id, "account_id": content.account_id, "status": "published"}, account_id=content.account_id)
-    return _to_response(db, content)
-
 @router.post("/{content_id}/image", response_model=ContentResponse)
 async def upload_content_image(
     content_id: str,

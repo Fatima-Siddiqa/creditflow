@@ -18,6 +18,7 @@ ROUTE_MAP: dict[str, str] = {
     "usage": "usage_service_url",
     "ai": "ai_generation_service_url",
     "content": "content_service_url",
+    "uploads": "content_service_url",
     "scheduler": "scheduler_service_url",
     "social": "social_publishing_service_url",
     "scraper": "scraper_service_url",

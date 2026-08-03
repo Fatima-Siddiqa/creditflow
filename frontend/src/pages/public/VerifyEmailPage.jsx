@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AuthLayout } from "../../components/AuthLayout.jsx";
 import { api } from "../../api/client.js";
@@ -7,12 +7,15 @@ export function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token");
   const [status, setStatus] = useState("pending"); // pending | success | error
+  const attempted = useRef(false);
 
   useEffect(() => {
     if (!token) {
       setStatus("error");
       return;
     }
+    if (attempted.current) return;
+    attempted.current = true;
     (async () => {
       const res = await api.post("auth/verify-email", { token });
       setStatus(res.ok ? "success" : "error");

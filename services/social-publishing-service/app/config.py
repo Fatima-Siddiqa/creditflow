@@ -14,5 +14,5 @@ class Settings(BaseSettings):
     linkedin_client_id: str = ""
     linkedin_client_secret: str = ""
     linkedin_redirect_uri: str = "http://localhost:8000/api/social/linkedin/callback"
-
+    frontend_base_url: str = "http://localhost:5173"  # where the browser lands after LinkedIn's redirect
 settings = Settings()

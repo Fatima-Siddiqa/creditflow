@@ -58,6 +58,17 @@ def calendar(
     ).order_by(ScheduledPost.publish_at).all()
     return rows
 
+from typing import Optional
+
+@router.get("/by-content/{content_id}", response_model=Optional[ScheduledPostResponse])
+def by_content(content_id: str, db: Session = Depends(get_db), payload: dict = Depends(get_current_payload)):
+    """Powers a 'Scheduled for ...' badge on the Content Studio page --
+    the next still-PENDING occurrence for this content item, if any."""
+    return db.query(ScheduledPost).filter(
+        ScheduledPost.account_id == payload["account_id"],
+        ScheduledPost.content_id == content_id,
+        ScheduledPost.status == ScheduleStatus.PENDING,
+    ).order_by(ScheduledPost.publish_at).first()
 
 @router.post("", response_model=ScheduledPostResponse, status_code=status.HTTP_201_CREATED)
 async def schedule(
