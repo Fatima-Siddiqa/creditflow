@@ -21,5 +21,7 @@ class Settings(BaseSettings):
     dunning_check_interval_seconds: int = 60
     outbox_poll_interval_seconds: float = 1.0
 
+    frontend_base_url: str = "http://localhost:5173"
+
 
 settings = Settings()

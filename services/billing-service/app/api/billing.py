@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.dependencies import get_current_payload, require_owner
 from app.models import Invoice, OutboxEvent, Subscription
+from app.config import settings
 from app.schemas import (
     CheckoutSessionRequest, CheckoutSessionResponse, InvoiceResponse,
     PlanChangeRequest, RefundRequest, SubscriptionResponse,
@@ -43,8 +44,8 @@ def checkout_session(
 
     checkout_url = create_checkout_session(
         sub.stripe_customer_id, body.plan_tier,
-        success_url=f"{settings.FRONTEND_BASE_URL}/app/billing?checkout=success",
-        cancel_url=f"{settings.FRONTEND_BASE_URL}/app/billing?checkout=cancelled",
+        success_url=f"{settings.frontend_base_url}/app/billing?checkout=success",
+        cancel_url=f"{settings.frontend_base_url}/app/billing?checkout=cancelled",
     )
     return CheckoutSessionResponse(checkout_url=checkout_url)
 
