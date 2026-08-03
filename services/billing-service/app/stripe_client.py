@@ -19,6 +19,8 @@ def create_checkout_session(stripe_customer_id: str, plan_tier: str, success_url
         line_items=[{"price": PRICE_IDS[plan_tier], "quantity": 1}],
         success_url=success_url,
         cancel_url=cancel_url,
+        metadata={"plan_tier": plan_tier},       
+        subscription_data={"metadata": {"plan_tier": plan_tier}},
     )
     return session.url
 
